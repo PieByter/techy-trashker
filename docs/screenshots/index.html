@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Techy Trashker — Flutter Prototype</title>
+  <style>
+    :root {
+      --forest: #344e41;
+      --forest-dark: #24382f;
+      --cream: #f7f6f1;
+      --mint: #e4efe6;
+      --ink: #1c2620;
+      --muted: #6d7973;
+      --amber: #e7a544;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      background: var(--forest);
+      color: white;
+      padding: 40px 32px 44px;
+    }
+    header .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 11px;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #a3b18a;
+      font-weight: 700;
+    }
+    header h1 {
+      margin: 14px 0 8px;
+      font-size: 38px;
+      letter-spacing: -.02em;
+      line-height: 1.08;
+    }
+    header p {
+      margin: 0;
+      max-width: 720px;
+      color: rgba(255,255,255,.68);
+      line-height: 1.55;
+      font-size: 15px;
+    }
+    .tag {
+      display: inline-block;
+      margin-top: 18px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.10);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .04em;
+    }
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 30px 24px 56px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+    }
+    figure {
+      margin: 0;
+      background: white;
+      border-radius: 24px;
+      padding: 12px;
+      box-shadow: 0 12px 32px rgba(52, 78, 65, .08);
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      border-radius: 16px;
+      background: var(--cream);
+    }
+    figcaption {
+      padding: 12px 8px 6px;
+    }
+    figcaption strong {
+      display: block;
+      font-size: 14px;
+      letter-spacing: -.01em;
+    }
+    figcaption span {
+      display: block;
+      margin-top: 3px;
+      font-size: 12px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .note {
+      margin-top: 28px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: var(--mint);
+      color: var(--forest-dark);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .note strong { color: var(--forest); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">🌿 Techy Trashker (FORDIGI)</div>
+    <h1>Flutter prototype</h1>
+    <p>
+      Implementasi UI mobile-first dari desain Figma: onboarding, login/daftar,
+      home, riwayat setor, peta bank sampah, profil, dan QR setor.
+      Semua data masih dummy dan siap disambungkan ke backend.
+    </p>
+    <div class="tag">Flutter 3.44 · go_router · Material 3</div>
+  </header>
+
+  <main>
+    <div class="grid">
+      <figure>
+        <img src="onboarding.png" alt="Onboarding">
+        <figcaption>
+          <strong>Onboarding</strong>
+          <span>3 halaman, badges, dots, dan skip ke login.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="login.png" alt="Login dan daftar">
+        <figcaption>
+          <strong>Login / Daftar</strong>
+          <span>Form dengan validasi, akun demo, dan Google placeholder.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="home.png" alt="Home">
+        <figcaption>
+          <strong>Home</strong>
+          <span>Poin, Hot News, aksi cepat, aktivitas terakhir.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="history.png" alt="Riwayat">
+        <figcaption>
+          <strong>Riwayat</strong>
+          <span>Filter setor/jemput, sorting, dan detail transaksi.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="map.png" alt="Peta">
+        <figcaption>
+          <strong>Peta</strong>
+          <span>Peta radar, pencarian, marker, dan daftar bank sampah.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="profile.png" alt="Profil">
+        <figcaption>
+          <strong>Profil</strong>
+          <span>Statistik, level progress, menu akun, dan logout.</span>
+        </figcaption>
+      </figure>
+      <figure>
+        <img src="qr.png" alt="QR Setor">
+        <figcaption>
+          <strong>QR Setor</strong>
+          <span>Kartu member, QR pattern, dan instruksi setor.</span>
+        </figcaption>
+      </figure>
+    </div>
+
+    <div class="note">
+      <strong>Catatan:</strong> prototype ini memakai data dummy di
+      <code>lib/data/mock_data.dart</code>. Foto berita memakai placeholder
+      Unsplash, dan QR masih berupa pola visual. Langkah berikutnya adalah
+      menyambungkan API, autentikasi, peta nyata, dan reward redemption.
+    </div>
+  </main>
+</body>
+</html>
