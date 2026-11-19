@@ -57,10 +57,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     buildTypes {
+        debug {
+            // Allow the Flutter debug app to reach a local HTTP API.
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
         release {
+            // Production API traffic must use HTTPS.
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")

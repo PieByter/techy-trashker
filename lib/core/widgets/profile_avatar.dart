@@ -9,6 +9,7 @@ class ProfileAvatar extends StatelessWidget {
     this.size = 52,
     this.showRing = false,
     this.imageAsset,
+    this.imageUrl,
   });
 
   final String initials;
@@ -17,11 +18,18 @@ class ProfileAvatar extends StatelessWidget {
 
   /// Optional bundled photo (e.g. the one used in the Figma design).
   final String? imageAsset;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
     final Widget avatar;
-    if (imageAsset != null) {
+    if (imageUrl != null && imageUrl!.isNotEmpty) {
+      avatar = CircleAvatar(
+        radius: size / 2,
+        backgroundColor: AppColors.mint,
+        backgroundImage: NetworkImage(imageUrl!),
+      );
+    } else if (imageAsset != null) {
       avatar = CircleAvatar(
         radius: size / 2,
         backgroundColor: AppColors.mint,

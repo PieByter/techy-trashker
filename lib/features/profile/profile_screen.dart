@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/app_card.dart';
@@ -8,10 +9,32 @@ import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/eco_pattern.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/profile_avatar.dart';
+import '../../data/api/api_client.dart';
 import '../../data/mock_data.dart';
+import '../../data/models/user_profile.dart';
+import '../../data/repositories/app_repository.dart';
 
-class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({super.key});
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key, this.session});
+
+  final SessionController? session;
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late final AppRepository _repository =
+      widget.session?.repository ?? AppRepository(ApiClient());
+  late Future<UserProfile> _profileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileFuture = widget.session == null
+        ? Future.value(demoProfile)
+        : _repository.getProfile();
+  }
 
   void _showComingSoon(BuildContext context, String label) {
     ScaffoldMessenger.of(context)
@@ -91,6 +114,47 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _editProfile(BuildContext context, UserProfile profile) async {
+    final controller = TextEditingController(text: profile.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit Profil'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Nama lengkap'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Simpan'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.trim().length < 2) return;
+
+    try {
+      final updated = await _repository.updateProfile(name: name.trim());
+      if (!mounted) return;
+      setState(() => _profileFuture = Future.value(updated));
+      await widget.session?.refreshProfile();
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
+    }
+  }
+
   void _showLogoutDialog(BuildContext context) {
     showDialog<void>(
       context: context,
@@ -106,9 +170,17 @@ class ProfileScreen extends StatelessWidget {
               child: const Text('Batal'),
             ),
             TextButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(dialogContext);
-                context.go('/login');
+                try {
+                  await widget.session?.logout();
+                  if (context.mounted) context.go('/login');
+                } catch (error) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(error.toString())));
+                }
               },
               style: TextButton.styleFrom(foregroundColor: AppColors.danger),
               child: const Text('Keluar'),
@@ -121,6 +193,38 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return FutureBuilder<UserProfile>(
+      future: _profileFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => setState(
+                      () => _profileFuture = _repository.getProfile(),
+                    ),
+                    child: const Text('Coba lagi'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return _buildProfile(context, snapshot.requireData);
+      },
+    );
+  }
+
+  Widget _buildProfile(BuildContext context, UserProfile profile) {
     return SafeArea(
       bottom: false,
       child: SingleChildScrollView(
@@ -144,7 +248,10 @@ class ProfileScreen extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              const _ProfileHero(),
+              _ProfileHero(
+                profile: profile,
+                onEdit: () => _editProfile(context, profile),
+              ),
               const SizedBox(height: 24),
               _MenuSection(
                 title: 'Akun',
@@ -153,7 +260,7 @@ class ProfileScreen extends StatelessWidget {
                     icon: Icons.person_outline_rounded,
                     title: 'Edit Profil',
                     subtitle: 'Nama, email, dan foto',
-                    onTap: () => _showComingSoon(context, 'Edit profil'),
+                    onTap: () => _editProfile(context, profile),
                   ),
                   _MenuItem(
                     icon: Icons.location_on_outlined,
@@ -164,7 +271,7 @@ class ProfileScreen extends StatelessWidget {
                   _MenuItem(
                     icon: Icons.card_giftcard_rounded,
                     title: 'Reward Saya',
-                    subtitle: '3 reward tersedia',
+                    subtitle: '${profile.rewards} reward ditukar',
                     onTap: () => _showComingSoon(context, 'Reward'),
                   ),
                 ],
@@ -231,7 +338,7 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 26),
               Center(
                 child: Text(
-                  'Techy Trashker v1.0.0 · Prototype',
+                  'Techy Trashker v1.0.0',
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(fontSize: 10.5),
@@ -246,7 +353,10 @@ class ProfileScreen extends StatelessWidget {
 }
 
 class _ProfileHero extends StatelessWidget {
-  const _ProfileHero();
+  const _ProfileHero({required this.profile, required this.onEdit});
+
+  final UserProfile profile;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -277,10 +387,13 @@ class _ProfileHero extends StatelessWidget {
               Row(
                 children: [
                   ProfileAvatar(
-                    initials: demoProfile.initials,
+                    initials: profile.initials,
                     size: 66,
                     showRing: true,
-                    imageAsset: 'assets/images/avatar.jpg',
+                    imageAsset: profile.avatarUrl == null
+                        ? 'assets/images/avatar.jpg'
+                        : null,
+                    imageUrl: profile.avatarUrl,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -288,7 +401,7 @@ class _ProfileHero extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          demoProfile.name,
+                          profile.name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
@@ -334,15 +447,7 @@ class _ProfileHero extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(
-                          const SnackBar(
-                            content: Text('Edit profil akan tersedia segera.'),
-                          ),
-                        );
-                    },
+                    onPressed: onEdit,
                     icon: const Icon(
                       Icons.edit_outlined,
                       color: Colors.white,
@@ -359,21 +464,21 @@ class _ProfileHero extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _ProfileStat(
-                      value: formatWeight(demoProfile.totalWeightKg),
+                      value: formatWeight(profile.totalWeightKg),
                       label: 'Total Sampah',
                     ),
                   ),
                   _Divider(),
                   Expanded(
                     child: _ProfileStat(
-                      value: formatPoints(demoProfile.points),
+                      value: formatPoints(profile.points),
                       label: 'Poin',
                     ),
                   ),
                   _Divider(),
                   Expanded(
                     child: _ProfileStat(
-                      value: '${demoProfile.rewards}',
+                      value: '${profile.rewards}',
                       label: 'Reward',
                     ),
                   ),
@@ -383,7 +488,7 @@ class _ProfileHero extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    'Level 3 · Eco Warrior',
+                    profile.level,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: .70),
                       fontSize: 10.5,
@@ -392,7 +497,7 @@ class _ProfileHero extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '${demoProfile.points}/${demoProfile.nextLevelPoints}',
+                    '${profile.points}/${profile.nextLevelPoints}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 10.5,
@@ -405,7 +510,7 @@ class _ProfileHero extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(99),
                 child: LinearProgressIndicator(
-                  value: demoProfile.levelProgress,
+                  value: profile.levelProgress,
                   minHeight: 6,
                   backgroundColor: Colors.white.withValues(alpha: .12),
                   valueColor: const AlwaysStoppedAnimation(AppColors.amber),

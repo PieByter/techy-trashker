@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techy_trashker/app.dart';
-import 'package:techy_trashker/core/widgets/app_bottom_nav.dart';
 
 void main() {
   testWidgets('app starts on the onboarding screen', (tester) async {
@@ -25,7 +24,7 @@ void main() {
     expect(find.text('Password'), findsOneWidget);
   });
 
-  testWidgets('login opens home and bottom navigation switches tabs', (
+  testWidgets('login form validates before calling the backend', (
     tester,
   ) async {
     await tester.pumpWidget(const TechyTrashkerApp());
@@ -40,17 +39,8 @@ void main() {
     await tester.tap(loginButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('Hot News'), findsOneWidget);
-    expect(find.byType(AppBottomNav), findsOneWidget);
-
-    final historyTab = find.descendant(
-      of: find.byType(AppBottomNav),
-      matching: find.text('Riwayat'),
-    );
-    await tester.tap(historyTab);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Total Poin'), findsOneWidget);
-    expect(find.text('Mulai'), findsNothing);
+    expect(find.text('Email tidak boleh kosong'), findsOneWidget);
+    expect(find.text('Masuk ke akunmu'), findsOneWidget);
+    expect(find.text('Hot News'), findsNothing);
   });
 }

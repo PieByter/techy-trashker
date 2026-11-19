@@ -1,20 +1,44 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'auth/session_controller.dart';
 import '../features/auth/login_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/map/map_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
+import '../features/officer/officer_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/qr/qr_screen.dart';
 import '../features/shell/main_shell.dart';
 import 'theme/app_colors.dart';
 
 abstract final class AppRouter {
-  static GoRouter createRouter() {
+  static GoRouter createRouter(SessionController session) {
     return GoRouter(
       initialLocation: '/onboarding',
+      refreshListenable: session,
+      redirect: (context, state) {
+        if (!session.isInitialized) return null;
+
+        final location = state.matchedLocation;
+        final isPublic = location == '/onboarding' || location == '/login';
+        if (!session.isAuthenticated && !isPublic) return '/login';
+        final isOfficer =
+            session.profile?.role == 'officer' ||
+            session.profile?.role == 'admin';
+        if (session.isAuthenticated && isOfficer && location != '/officer') {
+          return '/officer';
+        }
+        if (session.isAuthenticated && !isOfficer && location == '/officer') {
+          return '/home';
+        }
+        if (session.isAuthenticated &&
+            (location == '/onboarding' || location == '/login')) {
+          return '/home';
+        }
+        return null;
+      },
       routes: [
         GoRoute(
           path: '/onboarding',
@@ -22,7 +46,7 @@ abstract final class AppRouter {
         ),
         GoRoute(
           path: '/login',
-          builder: (context, state) => const LoginScreen(),
+          builder: (context, state) => LoginScreen(session: session),
         ),
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) {
@@ -33,7 +57,7 @@ abstract final class AppRouter {
               routes: [
                 GoRoute(
                   path: '/home',
-                  builder: (context, state) => const HomeScreen(),
+                  builder: (context, state) => HomeScreen(session: session),
                 ),
               ],
             ),
@@ -41,7 +65,7 @@ abstract final class AppRouter {
               routes: [
                 GoRoute(
                   path: '/history',
-                  builder: (context, state) => const HistoryScreen(),
+                  builder: (context, state) => HistoryScreen(session: session),
                 ),
               ],
             ),
@@ -49,7 +73,8 @@ abstract final class AppRouter {
               routes: [
                 GoRoute(
                   path: '/map',
-                  builder: (context, state) => const MapScreen(),
+                  builder: (context, state) =>
+                      MapScreen(repository: session.repository),
                 ),
               ],
             ),
@@ -57,13 +82,20 @@ abstract final class AppRouter {
               routes: [
                 GoRoute(
                   path: '/profile',
-                  builder: (context, state) => const ProfileScreen(),
+                  builder: (context, state) => ProfileScreen(session: session),
                 ),
               ],
             ),
           ],
         ),
-        GoRoute(path: '/qr', builder: (context, state) => const QrScreen()),
+        GoRoute(
+          path: '/qr',
+          builder: (context, state) => QrScreen(session: session),
+        ),
+        GoRoute(
+          path: '/officer',
+          builder: (context, state) => OfficerScreen(session: session),
+        ),
       ],
       errorBuilder: (context, state) {
         return Scaffold(

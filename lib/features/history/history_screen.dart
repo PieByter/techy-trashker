@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/auth/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/material_style.dart';
@@ -7,13 +8,17 @@ import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/deposit_tile.dart';
 import '../../core/widgets/eco_pattern.dart';
 import '../../core/widgets/page_container.dart';
+import '../../data/api/api_client.dart';
 import '../../data/mock_data.dart';
 import '../../data/models/waste_deposit.dart';
+import '../../data/repositories/app_repository.dart';
 
 enum _HistoryFilter { all, dropOff, pickup }
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  const HistoryScreen({super.key, this.session});
+
+  final SessionController? session;
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -22,9 +27,42 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   var _filter = _HistoryFilter.all;
   var _newestFirst = true;
+  late final AppRepository _repository =
+      widget.session?.repository ?? AppRepository(ApiClient());
+  late Future<_HistoryData> _dataFuture;
 
-  List<WasteDeposit> get _filtered {
-    final items = demoDeposits.where((deposit) {
+  @override
+  void initState() {
+    super.initState();
+    _dataFuture = _loadData();
+  }
+
+  Future<_HistoryData> _loadData() async {
+    if (widget.session == null) {
+      return _HistoryData(
+        deposits: demoDeposits,
+        summary: DepositSummary(
+          total: demoDeposits.length,
+          completed: demoDeposits
+              .where((item) => item.status == DepositStatus.completed)
+              .length,
+          totalWeightKg: demoProfile.totalWeightKg,
+          totalPoints: demoProfile.points,
+        ),
+      );
+    }
+    final values = await Future.wait<dynamic>([
+      _repository.getDeposits(),
+      _repository.getDepositSummary(),
+    ]);
+    return _HistoryData(
+      deposits: values[0] as List<WasteDeposit>,
+      summary: values[1] as DepositSummary,
+    );
+  }
+
+  List<WasteDeposit> _filtered(List<WasteDeposit> deposits) {
+    final items = deposits.where((deposit) {
       switch (_filter) {
         case _HistoryFilter.all:
           return true;
@@ -59,96 +97,121 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _filtered;
+    return FutureBuilder<_HistoryData>(
+      future: _dataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _HistoryError(
+            message: snapshot.error.toString(),
+            onRetry: () => setState(() => _dataFuture = _loadData()),
+          );
+        }
+        return _buildHistory(context, snapshot.requireData);
+      },
+    );
+  }
 
+  Widget _buildHistory(BuildContext context, _HistoryData data) {
+    final items = _filtered(data.deposits);
     return SafeArea(
       bottom: false,
-      child: SingleChildScrollView(
-        child: PageContainer(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Riwayat',
-                          style: Theme.of(context).textTheme.headlineMedium,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Semua aktivitas sampahmu ada di sini.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  _CircleButton(
-                    icon: Icons.swap_vert_rounded,
-                    onTap: _toggleSort,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _SummaryCard(),
-              const SizedBox(height: 22),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
+      child: RefreshIndicator(
+        onRefresh: () async {
+          setState(() => _dataFuture = _loadData());
+          await _dataFuture;
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: PageContainer(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _FilterChip(
-                      label: 'Semua',
-                      selected: _filter == _HistoryFilter.all,
-                      onTap: () => setState(() => _filter = _HistoryFilter.all),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Riwayat',
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Semua aktivitas sampahmu ada di sini.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: 'Setor',
-                      selected: _filter == _HistoryFilter.dropOff,
-                      onTap: () =>
-                          setState(() => _filter = _HistoryFilter.dropOff),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: 'Jemput',
-                      selected: _filter == _HistoryFilter.pickup,
-                      onTap: () =>
-                          setState(() => _filter = _HistoryFilter.pickup),
+                    _CircleButton(
+                      icon: Icons.swap_vert_rounded,
+                      onTap: _toggleSort,
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Text(
-                    'Transaksi',
-                    style: Theme.of(context).textTheme.titleLarge,
+                const SizedBox(height: 20),
+                _SummaryCard(summary: data.summary),
+                const SizedBox(height: 22),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _FilterChip(
+                        label: 'Semua',
+                        selected: _filter == _HistoryFilter.all,
+                        onTap: () =>
+                            setState(() => _filter = _HistoryFilter.all),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Setor',
+                        selected: _filter == _HistoryFilter.dropOff,
+                        onTap: () =>
+                            setState(() => _filter = _HistoryFilter.dropOff),
+                      ),
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Jemput',
+                        selected: _filter == _HistoryFilter.pickup,
+                        onTap: () =>
+                            setState(() => _filter = _HistoryFilter.pickup),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  Text(
-                    '${items.length} item',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (items.isEmpty)
-                const _EmptyState()
-              else
-                for (final deposit in items) ...[
-                  DepositTile(
-                    deposit: deposit,
-                    onTap: () => _showDepositDetail(context, deposit),
-                  ),
-                  const SizedBox(height: 10),
-                ],
-            ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Text(
+                      'Transaksi',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const Spacer(),
+                    Text(
+                      '${items.length} item',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (items.isEmpty)
+                  const _EmptyState()
+                else
+                  for (final deposit in items) ...[
+                    DepositTile(
+                      deposit: deposit,
+                      onTap: () => _showDepositDetail(context, deposit),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+              ],
+            ),
           ),
         ),
       ),
@@ -161,6 +224,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       DepositStatus.completed => ('Selesai', AppColors.forest),
       DepositStatus.processing => ('Diproses', const Color(0xFF9A6B1F)),
       DepositStatus.scheduled => ('Dijadwalkan', AppColors.skyInk),
+      DepositStatus.cancelled => ('Dibatalkan', AppColors.danger),
     };
 
     showModalBottomSheet<void>(
@@ -226,7 +290,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               const SizedBox(height: 4),
               Center(
                 child: Text(
-                  deposit.id,
+                  deposit.code,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -248,6 +312,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 valueColor: AppColors.forest,
               ),
               const SizedBox(height: 20),
+              if (widget.session != null &&
+                  (deposit.status == DepositStatus.scheduled ||
+                      deposit.status == DepositStatus.processing))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        try {
+                          await _repository.cancelDeposit(deposit.id);
+                          if (!context.mounted) return;
+                          Navigator.pop(sheetContext);
+                          setState(() => _dataFuture = _loadData());
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Setoran berhasil dibatalkan.'),
+                            ),
+                          );
+                        } catch (error) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(error.toString())),
+                          );
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                      ),
+                      child: const Text('Batalkan setoran'),
+                    ),
+                  ),
+                ),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
@@ -264,6 +361,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 }
 
 class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.summary});
+
+  final DepositSummary summary;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -293,7 +394,7 @@ class _SummaryCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: _SummaryStat(
-                    value: formatPoints(demoProfile.points),
+                    value: formatPoints(summary.totalPoints),
                     label: 'Total Poin',
                     icon: Icons.eco_rounded,
                   ),
@@ -301,7 +402,7 @@ class _SummaryCard extends StatelessWidget {
                 _VerticalDivider(),
                 Expanded(
                   child: _SummaryStat(
-                    value: formatWeight(demoProfile.totalWeightKg),
+                    value: formatWeight(summary.totalWeightKg),
                     label: 'Total Sampah',
                     icon: Icons.scale_rounded,
                   ),
@@ -309,7 +410,7 @@ class _SummaryCard extends StatelessWidget {
                 _VerticalDivider(),
                 Expanded(
                   child: _SummaryStat(
-                    value: '${demoDeposits.length}',
+                    value: '${summary.total}',
                     label: 'Transaksi',
                     icon: Icons.receipt_long_rounded,
                   ),
@@ -522,4 +623,36 @@ class _DetailRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _HistoryData {
+  const _HistoryData({required this.deposits, required this.summary});
+
+  final List<WasteDeposit> deposits;
+  final DepositSummary summary;
+}
+
+class _HistoryError extends StatelessWidget {
+  const _HistoryError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          FilledButton.tonal(
+            onPressed: onRetry,
+            child: const Text('Coba lagi'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

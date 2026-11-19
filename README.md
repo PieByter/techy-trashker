@@ -3,11 +3,9 @@
 Aplikasi pengelolaan sampah dan bank sampah — prototype Flutter berdasarkan desain
 Figma **Techy Trashker (FORDIGI)**.
 
-> Status: **MVP** — UI prototype Flutter + backend API di [`backend/`](backend/).
-> Backend sudah mencakup auth, profil/poin, setoran, penjemputan, QR, reward,
-> leaderboard, dan admin. Peta sudah memakai **Google Maps** (API key lewat
-> `.env`). Aplikasi Flutter masih memakai data dummy; integrasi API adalah
-> langkah berikutnya.
+> Status: **MVP** — Flutter terhubung ke backend API di [`backend/`](backend/).
+> Untuk login, data server, Google Maps, dan mode petugas, siapkan `.env` dan
+> jalankan backend sesuai panduan di bawah.
 
 ## Screenshots
 
@@ -22,16 +20,18 @@ Figma **Techy Trashker (FORDIGI)**.
 > Screenshot Peta di atas memakai fallback preview (golden test). Di runtime
 > dengan `GOOGLE_MAPS_API_KEY` terisi, yang tampil adalah Google Maps asli.
 
-## Fitur prototype
+## Fitur aplikasi
 
 - **Onboarding** 3 halaman dengan badges, dots indicator, dan skip.
-- **Login / Daftar** dengan validasi form dan akun demo.
-- **Home** — sapaan, poin, Hot News, aksi cepat, aktivitas terakhir, bank terdekat.
+- **Login / Daftar** dengan validasi dan autentikasi Supabase.
+- **Home** — profil/poin, Hot News, aktivitas terakhir, bank terdekat, jadwal
+  penjemputan, dan penukaran reward dari API.
 - **Riwayat** — ringkasan poin/berat, filter Setor/Jemput, sorting, detail transaksi.
-- **Peta** — Google Maps asli dengan marker bank sampah, pencarian, dan info
-  buka/tutup. Ada fallback preview kalau API key belum diisi.
-- **Profil** — statistik, level progress, menu akun, pengaturan, bantuan, logout.
-- **QR Setor** — kartu member, QR-style pattern, instruksi, simpan/bagikan.
+- **Peta** — Google Maps, lokasi GPS, daftar bank sampah, dan jarak dari backend.
+- **Profil** — statistik API, edit nama, pengaturan, bantuan, dan logout.
+- **QR Setor** — QR berumur pendek dari backend, countdown, dan salin token.
+- **Panel petugas** — scan QR/kode member, timbang setoran, dan proses antrean
+  penjemputan.
 - **Bottom sheet interaktif** untuk notifikasi, jadwal penjemputan, reward, berita,
   dan detail transaksi.
 
@@ -42,7 +42,8 @@ Figma **Techy Trashker (FORDIGI)**.
 - Material 3 + custom theme
 - Poppins (bundled di `assets/fonts/`)
 - `google_maps_flutter` untuk peta dan marker bank sampah
-- Data dummy lokal di `lib/data/mock_data.dart`
+- HTTP client, penyimpanan token aman, refresh token otomatis, dan repository API.
+- Data demo lokal hanya untuk golden/widget test tanpa session.
 - Backend: Fastify 5 + TypeScript, Supabase Auth, Supabase Postgres, Drizzle ORM
 
 ## Backend API (MVP)
@@ -103,10 +104,23 @@ Untuk web:
 flutter run -d chrome --dart-define-from-file=.env
 ```
 
+Set `API_BASE_URL` bila backend tidak berjalan di alamat default:
+
+- Web: default `http://localhost:3000`.
+- Android emulator: default `http://10.0.2.2:3000`.
+- iOS simulator: `http://localhost:3000`.
+- Device fisik: alamat LAN komputer yang menjalankan backend, mis.
+  `http://192.168.1.10:3000`.
+
+Build Android debug mengizinkan HTTP lokal untuk development. Build release
+memerlukan HTTPS; gunakan URL API publik dengan TLS.
+
 Android membaca `.env` otomatis lewat `android/app/build.gradle.kts`; flag
-`--dart-define-from-file` diperlukan untuk web dan disarankan untuk semua
-platform. Kalau memakai VS Code, pilih launch config **Techy Trashker (Chrome)**
-atau **Techy Trashker (pilih device)**.
+Gradle tersebut hanya untuk key Google Maps Android. Gunakan
+`--dart-define-from-file=.env` pada semua platform bila `API_BASE_URL` diisi;
+flag ini juga dibutuhkan web untuk key Google Maps. Kalau memakai VS Code,
+pilih launch config **Techy Trashker (Chrome)** atau
+**Techy Trashker (pilih device)**.
 
 Detail setup Google Maps (termasuk iOS) ada di [Google Maps](#google-maps).
 
@@ -114,7 +128,7 @@ Build production:
 
 ```bash
 flutter build web --dart-define-from-file=.env
-flutter build apk --release
+flutter build apk --release --dart-define-from-file=.env
 ```
 
 ## Google Maps
@@ -131,8 +145,10 @@ Aplikasi memakai `google_maps_flutter` dengan marker custom
   `ios/Flutter/Secrets.xcconfig`, isi key, lalu build dari macOS. File tersebut
   sudah di-gitignore.
 
-> Catatan: `.env` di root project khusus Google Maps. Konfigurasi backend
-> Supabase ada di `backend/.env` (lihat [`backend/README.md`](backend/README.md)).
+> Catatan: `.env` di root project berisi Google Maps + `API_BASE_URL`.
+> Konfigurasi Supabase ada di `backend/.env` (lihat
+> [`backend/README.md`](backend/README.md)). Backend harus berjalan sebelum
+> login; akurasi bank terdekat dihitung dari GPS setelah izin lokasi diberikan.
 
 Batasi API key di Google Cloud:
 

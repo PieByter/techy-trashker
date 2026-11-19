@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/widgets/app_card.dart';
@@ -10,66 +11,155 @@ import '../../core/widgets/eco_pattern.dart';
 import '../../core/widgets/page_container.dart';
 import '../../core/widgets/profile_avatar.dart';
 import '../../core/widgets/section_header.dart';
+import '../../data/api/api_client.dart';
 import '../../data/mock_data.dart';
 import '../../data/models/news_item.dart';
+import '../../data/models/reward_item.dart';
 import '../../data/models/user_profile.dart';
+import '../../data/models/waste_bank.dart';
+import '../../data/models/waste_deposit.dart';
+import '../../data/repositories/app_repository.dart';
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, this.session});
+
+  final SessionController? session;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late final AppRepository _repository =
+      widget.session?.repository ?? AppRepository(ApiClient());
+  late Future<_HomeData> _dataFuture;
+  final _pickupWeightController = TextEditingController(text: '1.0');
+
+  @override
+  void dispose() {
+    _pickupWeightController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _dataFuture = _loadData();
+  }
+
+  Future<_HomeData> _loadData() async {
+    if (widget.session == null) {
+      return _HomeData(
+        profile: demoProfile,
+        news: demoNews,
+        deposits: demoDeposits,
+        nearestBank: demoWasteBanks.first,
+      );
+    }
+    final values = await Future.wait<dynamic>([
+      _repository.getProfile(),
+      _repository.getNews(limit: 10),
+      _repository.getDeposits(limit: 5),
+      _repository.getWasteBanks(limit: 1),
+    ]);
+    final banks = values[3] as List<WasteBank>;
+    return _HomeData(
+      profile: values[0] as UserProfile,
+      news: values[1] as List<NewsItem>,
+      deposits: values[2] as List<WasteDeposit>,
+      nearestBank: banks.isEmpty ? null : banks.first,
+    );
+  }
+
+  Future<void> _reload() async {
+    setState(() => _dataFuture = _loadData());
+    await _dataFuture;
+  }
 
   @override
   Widget build(BuildContext context) {
+    return FutureBuilder<_HomeData>(
+      future: _dataFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return _ApiLoadError(
+            message: snapshot.error.toString(),
+            onRetry: () => setState(() => _dataFuture = _loadData()),
+          );
+        }
+        return _buildContent(context, snapshot.requireData);
+      },
+    );
+  }
+
+  Widget _buildContent(BuildContext context, _HomeData data) {
     return SafeArea(
       bottom: false,
-      child: SingleChildScrollView(
-        child: PageContainer(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _HomeHeader(
-                profile: demoProfile,
-                onNotifications: () => _showNotifications(context),
-              ),
-              const SizedBox(height: 22),
-              _PointsCard(
-                profile: demoProfile,
-                onRewards: () => _showRewardsSheet(context),
-              ),
-              const SizedBox(height: 26),
-              SectionHeader(
-                title: 'Hot News',
-                actionLabel: 'Lihat semua',
-                onAction: () => _showAllNews(context),
-              ),
-              const SizedBox(height: 12),
-              _NewsCarousel(
-                news: demoNews,
-                onTap: (item) => _showNewsDetail(context, item),
-              ),
-              const SizedBox(height: 26),
-              const SectionHeader(title: 'Aksi Cepat'),
-              const SizedBox(height: 12),
-              _QuickActions(
-                onPickup: () => _showPickupSheet(context),
-                onDeposit: () => context.push('/qr'),
-                onHistory: () => context.go('/history'),
-                onRewards: () => _showRewardsSheet(context),
-              ),
-              const SizedBox(height: 26),
-              SectionHeader(
-                title: 'Aktivitas Terakhir',
-                actionLabel: 'Riwayat',
-                onAction: () => context.go('/history'),
-              ),
-              const SizedBox(height: 12),
-              for (final deposit in demoDeposits.take(2)) ...[
-                DepositTile(deposit: deposit),
-                const SizedBox(height: 10),
+      child: RefreshIndicator(
+        onRefresh: _reload,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: PageContainer(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _HomeHeader(
+                  profile: data.profile,
+                  onNotifications: () => _showNotifications(context),
+                ),
+                const SizedBox(height: 22),
+                _PointsCard(
+                  profile: data.profile,
+                  onRewards: () => _showRewardsSheet(context, data.profile),
+                ),
+                const SizedBox(height: 26),
+                SectionHeader(
+                  title: 'Hot News',
+                  actionLabel: 'Lihat semua',
+                  onAction: () => _showAllNews(context, data.news),
+                ),
+                const SizedBox(height: 12),
+                if (data.news.isEmpty)
+                  const _InlineEmpty(message: 'Belum ada berita terbaru.')
+                else
+                  _NewsCarousel(
+                    news: data.news,
+                    onTap: (item) => _showNewsDetail(context, item),
+                  ),
+                const SizedBox(height: 26),
+                const SectionHeader(title: 'Aksi Cepat'),
+                const SizedBox(height: 12),
+                _QuickActions(
+                  onPickup: () => _showPickupSheet(context),
+                  onDeposit: () => context.push('/qr'),
+                  onHistory: () => context.go('/history'),
+                  onRewards: () => _showRewardsSheet(context, data.profile),
+                ),
+                const SizedBox(height: 26),
+                SectionHeader(
+                  title: 'Aktivitas Terakhir',
+                  actionLabel: 'Riwayat',
+                  onAction: () => context.go('/history'),
+                ),
+                const SizedBox(height: 12),
+                if (data.deposits.isEmpty)
+                  const _InlineEmpty(message: 'Belum ada aktivitas setor.')
+                else
+                  for (final deposit in data.deposits.take(2)) ...[
+                    DepositTile(deposit: deposit),
+                    const SizedBox(height: 10),
+                  ],
+                const SizedBox(height: 8),
+                _NearestBankCard(
+                  bank: data.nearestBank,
+                  onTap: () => context.go('/map'),
+                ),
               ],
-              const SizedBox(height: 8),
-              _NearestBankCard(onTap: () => context.go('/map')),
-            ],
+            ),
           ),
         ),
       ),
@@ -130,7 +220,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _showAllNews(BuildContext context) {
+  void _showAllNews(BuildContext context, List<NewsItem> news) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -150,7 +240,7 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              for (final item in demoNews) ...[
+              for (final item in news) ...[
                 _NewsListTile(
                   item: item,
                   onTap: () {
@@ -167,7 +257,17 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _showNewsDetail(BuildContext context, NewsItem item) {
+  Future<void> _showNewsDetail(BuildContext context, NewsItem item) async {
+    var detail = item;
+    if (item.id != null) {
+      try {
+        detail = await _repository.getNewsDetail(item.id!);
+      } catch (_) {
+        // Keep the summary card content available if article detail is offline.
+      }
+    }
+    if (!context.mounted) return;
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -190,7 +290,7 @@ class HomeScreen extends StatelessWidget {
                     SizedBox(
                       height: 240,
                       width: double.infinity,
-                      child: Image.asset(item.imageAsset, fit: BoxFit.cover),
+                      child: _NewsImage(item: detail, fit: BoxFit.cover),
                     ),
                     Positioned(
                       top: 16,
@@ -224,7 +324,7 @@ class HomeScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        item.title,
+                        detail.title,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 10),
@@ -237,7 +337,7 @@ class HomeScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            item.date,
+                            detail.date,
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           const SizedBox(width: 14),
@@ -255,17 +355,8 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 18),
                       Text(
-                        item.summary,
+                        detail.content ?? detail.summary,
                         style: Theme.of(context).textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Techy Trashker terus mengajak warga untuk memilah sampah '
-                        'dari rumah. Mulai dari langkah kecil: pisahkan organik '
-                        'dan anorganik, lalu setor ke bank sampah terdekat.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.muted,
-                        ),
                       ),
                     ],
                   ),
@@ -280,8 +371,13 @@ class HomeScreen extends StatelessWidget {
 
   void _showPickupSheet(BuildContext context) {
     var selectedType = 'Plastik';
-    var selectedDate = 'Besok';
+    var selectedDate = _scheduleFor(
+      DateTime.now().add(const Duration(days: 1)),
+    );
+    var estimatedWeight = 1.0;
     var address = '';
+    var isSubmitting = false;
+    _pickupWeightController.text = '1.0';
 
     showModalBottomSheet<void>(
       context: context,
@@ -348,6 +444,24 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 14),
+                    const _FieldLabel('Estimasi berat (kg)'),
+                    const SizedBox(height: 8),
+                    TextField(
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      controller: _pickupWeightController,
+                      onChanged: (value) {
+                        estimatedWeight =
+                            double.tryParse(value.replaceAll(',', '.')) ?? 0;
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Contoh: 1,5',
+                        suffixText: 'kg',
+                        prefixIcon: Icon(Icons.scale_rounded),
+                      ),
+                    ),
                     const SizedBox(height: 18),
                     const _FieldLabel('Jadwal'),
                     const SizedBox(height: 8),
@@ -365,9 +479,46 @@ class HomeScreen extends StatelessWidget {
                               ),
                               child: _ChoicePill(
                                 label: date,
-                                selected: selectedDate == date,
-                                onTap: () =>
-                                    setSheetState(() => selectedDate = date),
+                                selected: switch (date) {
+                                  'Hari ini' =>
+                                    selectedDate.day == DateTime.now().day,
+                                  'Besok' =>
+                                    selectedDate.day ==
+                                        DateTime.now()
+                                            .add(const Duration(days: 1))
+                                            .day,
+                                  _ =>
+                                    selectedDate.day != DateTime.now().day &&
+                                        selectedDate.day !=
+                                            DateTime.now()
+                                                .add(const Duration(days: 1))
+                                                .day,
+                                },
+                                onTap: () async {
+                                  if (date == 'Pilih tanggal') {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDate,
+                                      firstDate: DateTime.now(),
+                                      lastDate: DateTime.now().add(
+                                        const Duration(days: 30),
+                                      ),
+                                    );
+                                    if (picked == null) return;
+                                    setSheetState(() {
+                                      selectedDate = _scheduleFor(picked);
+                                    });
+                                  } else {
+                                    final days = date == 'Besok' ? 1 : 0;
+                                    setSheetState(() {
+                                      selectedDate = _scheduleFor(
+                                        DateTime.now().add(
+                                          Duration(days: days),
+                                        ),
+                                      );
+                                    });
+                                  }
+                                },
                               ),
                             ),
                           ),
@@ -377,20 +528,69 @@ class HomeScreen extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton(
-                        onPressed: () {
-                          final messenger = ScaffoldMessenger.of(context);
-                          Navigator.pop(sheetContext);
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                address.trim().isEmpty
-                                    ? 'Penjemputan $selectedType dijadwalkan $selectedDate (demo).'
-                                    : 'Penjemputan $selectedType ke $address dijadwalkan $selectedDate (demo).',
-                              ),
-                            ),
-                          );
-                        },
-                        child: const Text('Jadwalkan Penjemputan'),
+                        onPressed: isSubmitting
+                            ? null
+                            : () async {
+                                if (address.trim().length < 10) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Masukkan alamat penjemputan yang lengkap.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (estimatedWeight <= 0 ||
+                                    estimatedWeight > 500) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Estimasi berat harus di antara 0 dan 500 kg.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                setSheetState(() => isSubmitting = true);
+                                try {
+                                  await _repository.createPickup(
+                                    PickupRequest(
+                                      material: selectedType,
+                                      category: selectedType,
+                                      weightKg: estimatedWeight,
+                                      address: address.trim(),
+                                      scheduledAt: selectedDate,
+                                    ),
+                                  );
+                                  if (!context.mounted) return;
+                                  Navigator.pop(sheetContext);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Permintaan penjemputan berhasil dibuat.',
+                                      ),
+                                    ),
+                                  );
+                                  setState(() => _dataFuture = _loadData());
+                                } catch (error) {
+                                  if (!context.mounted) return;
+                                  setSheetState(() => isSubmitting = false);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(error.toString())),
+                                  );
+                                }
+                              },
+                        child: isSubmitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Jadwalkan Penjemputan'),
                       ),
                     ),
                   ],
@@ -403,7 +603,13 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void _showRewardsSheet(BuildContext context) {
+  DateTime _scheduleFor(DateTime date) {
+    final atTen = DateTime(date.year, date.month, date.day, 10);
+    final minimumTime = DateTime.now().add(const Duration(minutes: 30));
+    return atTen.isBefore(minimumTime) ? minimumTime : atTen;
+  }
+
+  void _showRewardsSheet(BuildContext context, UserProfile profile) {
     final messenger = ScaffoldMessenger.of(context);
 
     showModalBottomSheet<void>(
@@ -411,76 +617,88 @@ class HomeScreen extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        void redeem(String title) {
-          Navigator.pop(sheetContext);
-          messenger
-            ..hideCurrentSnackBar()
-            ..showSnackBar(
-              SnackBar(content: Text('$title berhasil ditukar (demo).')),
-            );
-        }
-
         return AppSheet(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+          child: FutureBuilder<List<RewardItem>>(
+            future: _repository.getRewards(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 36),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return _InlineEmpty(message: snapshot.error.toString());
+              }
+              final rewards = snapshot.data ?? const <RewardItem>[];
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Expanded(
-                    child: Text(
-                      'Tukar Poin',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.ink,
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Tukar Poin',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.ink,
+                          ),
+                        ),
                       ),
-                    ),
+                      _Pill(
+                        label: '${profile.points} poin',
+                        background: AppColors.mint,
+                        foreground: AppColors.forest,
+                      ),
+                    ],
                   ),
-                  _Pill(
-                    label: '${demoProfile.points} poin',
-                    background: AppColors.mint,
-                    foreground: AppColors.forest,
+                  const SizedBox(height: 4),
+                  Text(
+                    'Tukarkan poinmu dengan reward yang bermanfaat.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 18),
+                  if (rewards.isEmpty)
+                    const _InlineEmpty(message: 'Belum ada reward tersedia.')
+                  else
+                    for (final reward in rewards) ...[
+                      _RewardRow(
+                        icon: Icons.card_giftcard_rounded,
+                        title: reward.title,
+                        points: reward.pointsCost,
+                        available: reward.canRedeem,
+                        onTap: reward.canRedeem
+                            ? () async {
+                                try {
+                                  await _repository.redeemReward(reward.id);
+                                  if (!context.mounted) return;
+                                  Navigator.pop(sheetContext);
+                                  await widget.session?.refreshProfile();
+                                  if (!context.mounted) return;
+                                  setState(() => _dataFuture = _loadData());
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '${reward.title} berhasil ditukar.',
+                                      ),
+                                    ),
+                                  );
+                                } catch (error) {
+                                  if (!context.mounted) return;
+                                  messenger.showSnackBar(
+                                    SnackBar(content: Text(error.toString())),
+                                  );
+                                }
+                              }
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                 ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Tukarkan poinmu dengan reward yang bermanfaat.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 18),
-              _RewardRow(
-                icon: Icons.local_offer_rounded,
-                title: 'Voucher Belanja Rp 10.000',
-                points: 50,
-                available: true,
-                onTap: () => redeem('Voucher Belanja Rp 10.000'),
-              ),
-              const SizedBox(height: 10),
-              _RewardRow(
-                icon: Icons.local_cafe_rounded,
-                title: 'Tumbler Eco',
-                points: 120,
-                available: true,
-                onTap: () => redeem('Tumbler Eco'),
-              ),
-              const SizedBox(height: 10),
-              const _RewardRow(
-                icon: Icons.emoji_nature_rounded,
-                title: 'Tanaman Hias',
-                points: 200,
-                available: false,
-              ),
-              const SizedBox(height: 10),
-              _RewardRow(
-                icon: Icons.park_rounded,
-                title: 'Donasi 1 Pohon',
-                points: 75,
-                available: true,
-                onTap: () => redeem('Donasi 1 Pohon'),
-              ),
-            ],
+              );
+            },
           ),
         );
       },
@@ -549,7 +767,10 @@ class _HomeHeader extends StatelessWidget {
           initials: profile.initials,
           size: 48,
           showRing: true,
-          imageAsset: 'assets/images/avatar.jpg',
+          imageAsset: profile.avatarUrl == null
+              ? 'assets/images/avatar.jpg'
+              : null,
+          imageUrl: profile.avatarUrl,
         ),
       ],
     );
@@ -849,7 +1070,7 @@ class _NewsCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.asset(item.imageAsset, fit: BoxFit.cover),
+              _NewsImage(item: item, fit: BoxFit.cover),
               DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -1024,9 +1245,10 @@ class _QuickActions extends StatelessWidget {
 }
 
 class _NearestBankCard extends StatelessWidget {
-  const _NearestBankCard({required this.onTap});
+  const _NearestBankCard({required this.onTap, required this.bank});
 
   final VoidCallback onTap;
+  final WasteBank? bank;
 
   @override
   Widget build(BuildContext context) {
@@ -1060,7 +1282,9 @@ class _NearestBankCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Bank Sampah Berseri · 0,8 km',
+                  bank == null
+                      ? 'Belum ada lokasi bank sampah.'
+                      : '${bank!.name} · ${bank!.distanceKm.toStringAsFixed(1)} km',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -1143,8 +1367,8 @@ class _NewsListTile extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Image.asset(
-              item.imageAsset,
+            child: _NewsImage(
+              item: item,
               width: 74,
               height: 64,
               fit: BoxFit.cover,
@@ -1351,4 +1575,110 @@ class _Pill extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NewsImage extends StatelessWidget {
+  const _NewsImage({
+    required this.item,
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+  });
+
+  final NewsItem item;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final url = item.imageUrl;
+    if (url != null && url.isNotEmpty) {
+      return Image.network(
+        url,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => _fallback(),
+      );
+    }
+    if (item.imageAsset.isNotEmpty) {
+      return Image.asset(
+        item.imageAsset,
+        width: width,
+        height: height,
+        fit: fit,
+        errorBuilder: (context, error, stackTrace) => _fallback(),
+      );
+    }
+    return _fallback();
+  }
+
+  Widget _fallback() => Image.asset(
+    'assets/images/news-1.jpg',
+    width: width,
+    height: height,
+    fit: fit,
+  );
+}
+
+class _HomeData {
+  const _HomeData({
+    required this.profile,
+    required this.news,
+    required this.deposits,
+    required this.nearestBank,
+  });
+
+  final UserProfile profile;
+  final List<NewsItem> news;
+  final List<WasteDeposit> deposits;
+  final WasteBank? nearestBank;
+}
+
+class _ApiLoadError extends StatelessWidget {
+  const _ApiLoadError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.cloud_off_rounded, color: AppColors.muted, size: 42),
+          const SizedBox(height: 12),
+          Text(
+            'Data belum bisa dimuat',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 14),
+          FilledButton.tonalIcon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Coba lagi'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _InlineEmpty extends StatelessWidget {
+  const _InlineEmpty({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 14),
+    child: Center(
+      child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+    ),
+  );
 }

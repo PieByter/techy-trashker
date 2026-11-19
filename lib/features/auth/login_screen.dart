@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/eco_pattern.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.session});
+
+  final SessionController? session;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -15,10 +18,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController(
-    text: 'andhika@techytrashker.id',
-  );
-  final _passwordController = TextEditingController(text: 'rahasia123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   var _isLogin = true;
   var _obscurePassword = true;
@@ -31,14 +32,32 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     FocusScope.of(context).unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    _enterApp();
-  }
+    final session = widget.session;
+    if (session == null) {
+      _showHelper('Autentikasi belum dikonfigurasi.');
+      return;
+    }
 
-  void _enterApp() {
-    context.go('/home');
+    try {
+      if (_isLogin) {
+        await session.login(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+      } else {
+        await session.register(
+          name: _nameController.text.trim(),
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+      }
+      if (mounted) context.go('/home');
+    } catch (error) {
+      if (mounted) _showHelper(error.toString());
+    }
   }
 
   void _toggleMode() {
@@ -285,15 +304,24 @@ class _LoginScreenState extends State<LoginScreen> {
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: _submit,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(_isLogin ? 'Masuk' : 'Daftar'),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.arrow_forward_rounded, size: 18),
-                ],
-              ),
+              onPressed: widget.session?.isBusy == true ? null : _submit,
+              child: widget.session?.isBusy == true
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(_isLogin ? 'Masuk' : 'Daftar'),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 18),
+                      ],
+                    ),
             ),
           ),
           const SizedBox(height: 18),
@@ -314,7 +342,9 @@ class _LoginScreenState extends State<LoginScreen> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: _enterApp,
+              onPressed: () => _showHelper(
+                'Login Google belum diaktifkan. Silakan masuk dengan email.',
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -360,7 +390,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(height: 4),
           Center(
             child: Text(
-              'Mode demo · data dummy tersimpan di perangkat',
+              'Akun dan data tersimpan aman di server.',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(fontSize: 10.5),

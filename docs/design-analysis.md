@@ -63,30 +63,28 @@ cards, soft mint highlights, and amber accents for points/rewards.
 - **Motif:** concentric circles + magnifying glass + leaf/recycle icon. Implemented
   as `EcoPattern` in `lib/core/widgets/eco_pattern.dart`.
 
-## Implemented in this prototype
+## Implemented in the Flutter app
 
 1. **Onboarding** — three pages with animated dots, badges, and a skip action.
-2. **Login / Register** — tabbed auth card, validation, demo credentials, Google
-   placeholder, and route into the app.
-3. **Home** — greeting, points card with progress, Hot News carousel, quick
-   actions, recent deposits, nearest bank card, notification and reward sheets.
+2. **Login / Register** — tabbed auth card, validation, Supabase Auth, and
+   session token refresh.
+3. **Home** — live profile/points, Hot News carousel, recent deposits, nearest
+   bank card, pickup request, and reward redemption.
 4. **Riwayat** — summary stats, filter by Setor/Jemput, newest/oldest sorting,
    deposit detail sheet.
-5. **Peta** — Google Maps dengan marker bank sampah, pencarian, filter, dan
-   fallback preview jika API key belum tersedia.
-6. **Profil** — profile hero, stats, level progress, account/settings menus,
-   help dialog, about dialog, logout confirmation.
-7. **QR Setor** — generated QR-style pattern, member card, instructions, and
-   save/share actions.
+5. **Peta** — Google Maps dengan marker dari API, pencarian, filter rating/jarak,
+   GPS, dan fallback preview jika API key belum tersedia.
+6. **Profil** — profil/statistik dari API, edit nama, pengaturan, bantuan, logout.
+7. **QR Setor** — token singkat dari backend, QR asli, dan countdown.
+8. **Panel petugas** — scan QR/kode member, catat berat, selesaikan penjemputan.
 
-All UI data is still dummy data in `lib/data/mock_data.dart`. The backend MVP
-in `backend/` is implemented; wiring the Flutter app to it is the next step.
+Backend MVP di `backend/` menggunakan Supabase Auth, Postgres, Drizzle, dan
+Fastify. Data demo lokal hanya digunakan oleh widget/golden test tanpa session.
 
 ## Suggested next step: backend contract
 
-The contract below is now implemented in [`backend/`](../backend/) using
-Supabase Auth, Supabase Postgres, Drizzle ORM, and Fastify. The Flutter UI still
-uses mock data until it is wired to the API.
+Kontrak endpoint di bawah sudah diimplementasikan di [`backend/`](../backend/)
+dan digunakan oleh aplikasi Flutter.
 
 | Endpoint | Purpose |
 | --- | --- |

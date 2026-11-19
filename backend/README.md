@@ -6,8 +6,9 @@ aplikasi Flutter (dan client lain) dengan autentikasi **Supabase Auth**, data
 
 > Status: **MVP selesai** — auth, profil/poin, berita, bank sampah, setoran,
 > penjemputan, QR setor, reward, leaderboard, dan panel admin sudah tersedia.
-> Aplikasi Flutter belum di-wire ke API ini; langkah berikutnya ada di
-> [Integrasi Flutter](#integrasi-flutter).
+> Flutter sudah memakai API ini untuk auth, Home, Riwayat, Peta, Profil,
+> penjemputan, reward, QR setor, dan mode petugas. Detail konfigurasi client ada
+> di [Integrasi Flutter](#integrasi-flutter).
 
 ## Stack
 
@@ -440,31 +441,32 @@ Checklist deploy:
 
 ## Integrasi Flutter
 
-Langkah berikutnya di aplikasi Flutter:
+Client Flutter menggunakan `http`, `flutter_secure_storage`, dan repository API
+di `lib/data/repositories/app_repository.dart`.
 
-1. Tambahkan `http`/`dio` + penyimpanan token aman
-   (`flutter_secure_storage`).
-2. Buat API client dengan base URL:
+1. Atur base URL melalui `API_BASE_URL` pada `.env` root project:
    - Android emulator: `http://10.0.2.2:3000`
    - iOS simulator: `http://localhost:3000`
    - device fisik: IP LAN mesin backend
    - produksi: HTTPS domain API
-3. Simpan `accessToken`, `refreshToken`, dan `expiresAt`; panggil
-   `POST /auth/refresh` sebelum expired (atau saat 401).
-4. Ganti `lib/data/mock_data.dart` dengan repository yang memanggil endpoint:
+2. Token access/refresh disimpan aman dan access token otomatis di-refresh
+   ketika API merespons 401.
+3. Layar menggunakan endpoint:
    - `UserProfile` ← `GET /me`
    - `NewsItem` ← `GET /news` / `GET /news/:id`
    - `WasteDeposit` ← `GET /deposits` / `GET /deposits/:id`
    - `WasteBank` ← `GET /waste-banks`
-5. Set `PUBLIC_BASE_URL` backend ke host yang bisa diakses device (mis.
+4. Set `PUBLIC_BASE_URL` backend ke host yang bisa diakses device (mis.
    `http://10.0.2.2:3000` untuk Android emulator) agar `imageUrl` dan
    `avatarUrl` valid.
-6. Halaman QR: panggil `POST /qr/session`, render QR dari `qrPayload`/
+5. Halaman QR memanggil `POST /qr/session`, render QR dari `qrPayload`/
    `token`, tampilkan countdown `expiresInSeconds`.
-7. Setor/jemput: `POST /deposits`. Reward: `GET /rewards`,
+6. Setor/jemput: `POST /deposits`. Reward: `GET /rewards`,
    `POST /rewards/:id/redeem`.
-8. Petugas: login role `officer`, gunakan `GET /officer/deposits` dan
-   `POST /deposits/:id/complete`, atau `POST /qr/scan`.
+7. Mode petugas tersedia di Flutter untuk role `officer`/`admin`: scan QR atau
+   kode member, timbang, dan proses antrean penjemputan melalui
+   `GET /officer/deposits`, `POST /qr/scan`, dan
+   `POST /deposits/:id/complete`.
 
 Mapping status backend → UI:
 
@@ -508,4 +510,4 @@ backend/
 - Admin belum bisa CRUD berita/bank sampah/user.
 - Leaderboard baru all-time (belum bulanan).
 - Belum ada idempotency key untuk create deposit/redemption.
-- Aplikasi Flutter masih memakai mock data.
+- Data demo Flutter hanya digunakan pada widget/golden test tanpa session.

@@ -110,5 +110,7 @@ class DepositTile extends StatelessWidget {
       return (label: 'Diproses', color: const Color(0xFF9A6B1F));
     case DepositStatus.scheduled:
       return (label: 'Dijadwalkan', color: AppColors.skyInk);
+    case DepositStatus.cancelled:
+      return (label: 'Dibatalkan', color: AppColors.danger);
   }
 }

@@ -1,12 +1,84 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../core/auth/session_controller.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/eco_pattern.dart';
+import '../../data/api/api_client.dart';
 import '../../data/mock_data.dart';
+import '../../data/models/user_profile.dart';
+import '../../data/repositories/app_repository.dart';
 
-class QrScreen extends StatelessWidget {
-  const QrScreen({super.key});
+class QrScreen extends StatefulWidget {
+  const QrScreen({super.key, this.session});
+
+  final SessionController? session;
+
+  @override
+  State<QrScreen> createState() => _QrScreenState();
+}
+
+class _QrScreenState extends State<QrScreen> {
+  late final AppRepository _repository =
+      widget.session?.repository ?? AppRepository(ApiClient());
+  late Future<QrSession> _qrFuture;
+  Timer? _timer;
+  int _secondsRemaining = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _qrFuture = widget.session == null
+        ? Future.value(
+            QrSession(
+              token: 'demo-qr-token',
+              qrPayload: 'techytrashker://deposit?token=demo-qr-token',
+              expiresAt: DateTime.now().add(const Duration(minutes: 5)),
+              expiresInSeconds: 300,
+              memberCode: 'TT-2024-00147',
+            ),
+          )
+        : _createQrSession();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<QrSession> _createQrSession() async {
+    final qr = await _repository.createQrSession();
+    try {
+      await widget.session?.refreshProfile();
+    } catch (_) {
+      // QR generation succeeded; a stale cached profile must not hide it.
+    }
+    if (mounted) {
+      _timer?.cancel();
+      setState(() => _secondsRemaining = qr.expiresInSeconds);
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return timer.cancel();
+        if (_secondsRemaining <= 1) {
+          setState(() => _secondsRemaining = 0);
+          timer.cancel();
+        } else {
+          setState(() => _secondsRemaining -= 1);
+        }
+      });
+    }
+    return qr;
+  }
+
+  void _regenerate() {
+    setState(() {
+      _secondsRemaining = 0;
+      _qrFuture = _createQrSession();
+    });
+  }
 
   void _showMessage(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
@@ -16,6 +88,7 @@ class QrScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final profile = widget.session?.profile ?? demoProfile;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
@@ -65,9 +138,46 @@ class QrScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 22),
-                      _QrCard(
-                        onSave: () =>
-                            _showMessage(context, 'QR disimpan (demo).'),
+                      FutureBuilder<QrSession>(
+                        future: _qrFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState !=
+                              ConnectionState.done) {
+                            return const SizedBox(
+                              height: 350,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                ),
+                              ),
+                            );
+                          }
+                          if (snapshot.hasError) {
+                            return _QrError(
+                              message: snapshot.error.toString(),
+                              onRetry: _regenerate,
+                            );
+                          }
+                          final qr = snapshot.requireData;
+                          return _QrCard(
+                            session: qr,
+                            profile: profile,
+                            secondsRemaining: widget.session == null
+                                ? qr.expiresInSeconds
+                                : _secondsRemaining,
+                            onSave: () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: qr.token),
+                              );
+                              if (context.mounted) {
+                                _showMessage(
+                                  context,
+                                  'Token QR disalin. QR hanya berlaku sekali.',
+                                );
+                              }
+                            },
+                          );
+                        },
                       ),
                       const SizedBox(height: 22),
                       const _StepRow(
@@ -85,35 +195,19 @@ class QrScreen extends StatelessWidget {
                         text: 'Poin otomatis masuk setelah sampah ditimbang.',
                       ),
                       const SizedBox(height: 22),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () =>
-                              _showMessage(context, 'QR disimpan (demo).'),
-                          icon: const Icon(Icons.download_rounded, size: 19),
-                          label: const Text('Simpan QR'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.cream,
-                            foregroundColor: AppColors.forestDark,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () =>
-                              _showMessage(context, 'QR dibagikan (demo).'),
-                          icon: const Icon(Icons.share_rounded, size: 18),
-                          label: const Text('Bagikan'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: .24),
+                      if (_secondsRemaining == 0 && widget.session != null)
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: _regenerate,
+                            icon: const Icon(Icons.refresh_rounded),
+                            label: const Text('Buat QR baru'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.cream,
+                              foregroundColor: AppColors.forestDark,
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -127,8 +221,16 @@ class QrScreen extends StatelessWidget {
 }
 
 class _QrCard extends StatelessWidget {
-  const _QrCard({required this.onSave});
+  const _QrCard({
+    required this.session,
+    required this.profile,
+    required this.secondsRemaining,
+    required this.onSave,
+  });
 
+  final QrSession session;
+  final UserProfile profile;
+  final int secondsRemaining;
   final VoidCallback onSave;
 
   @override
@@ -199,9 +301,12 @@ class _QrCard extends StatelessWidget {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                CustomPaint(
-                  painter: _QrPatternPainter(data: 'TT-2024-00147'),
-                  child: const SizedBox.expand(),
+                QrImageView(
+                  data: session.qrPayload,
+                  version: QrVersions.auto,
+                  errorCorrectionLevel: QrErrorCorrectLevel.H,
+                  padding: const EdgeInsets.all(10),
+                  backgroundColor: Colors.white,
                 ),
                 Container(
                   width: 52,
@@ -221,10 +326,10 @@ class _QrCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text(demoProfile.name, style: Theme.of(context).textTheme.titleSmall),
+          Text(profile.name, style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 3),
           Text(
-            'TT-2024-00147 · ${demoProfile.points} poin',
+            '${session.memberCode} Â· ${profile.points} poin',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 14),
@@ -234,13 +339,13 @@ class _QrCard extends StatelessWidget {
               color: AppColors.amberSoft,
               borderRadius: BorderRadius.circular(99),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.timer_outlined, color: Color(0xFF9A6B1F), size: 13),
                 SizedBox(width: 5),
                 Text(
-                  'Berlaku 5 menit',
+                  'Berlaku ${_formatCountdown(secondsRemaining)}',
                   style: TextStyle(
                     color: Color(0xFF9A6B1F),
                     fontSize: 10,
@@ -251,11 +356,43 @@ class _QrCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          TextButton(onPressed: onSave, child: const Text('Simpan ke galeri')),
+          TextButton(onPressed: onSave, child: const Text('Salin token QR')),
         ],
       ),
     );
   }
+}
+
+String _formatCountdown(int seconds) {
+  final minutes = seconds ~/ 60;
+  final remainingSeconds = seconds % 60;
+  return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+}
+
+class _QrError extends StatelessWidget {
+  const _QrError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Column(
+      children: [
+        const Icon(Icons.qr_code_2_rounded, size: 42, color: AppColors.forest),
+        const SizedBox(height: 10),
+        Text(message, textAlign: TextAlign.center),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: onRetry, child: const Text('Coba lagi')),
+      ],
+    ),
+  );
 }
 
 class _StepRow extends StatelessWidget {
@@ -302,97 +439,5 @@ class _StepRow extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _QrPatternPainter extends CustomPainter {
-  _QrPatternPainter({required this.data});
-
-  final String data;
-
-  static const _modules = 29;
-  static const _finder = 7;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cell = size.width / _modules;
-    final paint = Paint()..color = AppColors.forestDark;
-
-    // Quiet background.
-    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
-
-    var seed = data.codeUnits.fold<int>(
-      17,
-      (value, unit) => (value * 31 + unit) & 0x7fffffff,
-    );
-    bool nextBit() {
-      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-      return ((seed >> 16) & 1) == 1;
-    }
-
-    final reserved = <String>{};
-
-    void reserve(int x, int y, int w, int h) {
-      for (var dx = 0; dx < w; dx++) {
-        for (var dy = 0; dy < h; dy++) {
-          reserved.add('${x + dx}:${y + dy}');
-        }
-      }
-    }
-
-    void drawFinder(int x, int y) {
-      canvas.drawRect(
-        Rect.fromLTWH(x * cell, y * cell, 7 * cell, 7 * cell),
-        paint,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH((x + 1) * cell, (y + 1) * cell, 5 * cell, 5 * cell),
-        Paint()..color = Colors.white,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH((x + 2) * cell, (y + 2) * cell, 3 * cell, 3 * cell),
-        paint,
-      );
-      reserve(x - 1, y - 1, 9, 9);
-    }
-
-    drawFinder(0, 0);
-    drawFinder(_modules - _finder, 0);
-    drawFinder(0, _modules - _finder);
-
-    // Timing patterns.
-    for (var i = 8; i < _modules - 8; i++) {
-      if (i.isEven) {
-        canvas.drawRect(Rect.fromLTWH(i * cell, 6 * cell, cell, cell), paint);
-        canvas.drawRect(Rect.fromLTWH(6 * cell, i * cell, cell, cell), paint);
-      }
-      reserved.add('$i:6');
-      reserved.add('6:$i');
-    }
-
-    // Data modules.
-    for (var y = 0; y < _modules; y++) {
-      for (var x = 0; x < _modules; x++) {
-        if (reserved.contains('$x:$y')) continue;
-        // Leave a little breathing room in the centre for the logo.
-        if (x > 10 && x < 18 && y > 10 && y < 18) continue;
-        if (nextBit()) {
-          canvas.drawRect(
-            Rect.fromLTWH(
-              x * cell + cell * .08,
-              y * cell + cell * .08,
-              cell * .84,
-              cell * .84,
-            ),
-            paint,
-          );
-        }
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _QrPatternPainter oldDelegate) {
-    return oldDelegate.data != data;
   }
 }

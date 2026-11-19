@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
 
@@ -12,13 +13,15 @@ import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/profile_avatar.dart';
 import '../../data/mock_data.dart';
 import '../../data/models/waste_bank.dart';
+import '../../data/repositories/app_repository.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key, this.useGoogleMap = true});
+  const MapScreen({super.key, this.useGoogleMap = true, this.repository});
 
   /// `false` dipakai widget test/golden supaya tidak membuat platform view.
   /// Map preview tetap menampilkan marker dengan posisi `mapX`/`mapY`.
   final bool useGoogleMap;
+  final AppRepository? repository;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -57,6 +60,13 @@ class _MapScreenState extends State<MapScreen> {
 
   var _query = '';
   String? _selectedId;
+  late List<WasteBank> _banks;
+  var _loadingBanks = false;
+  String? _bankError;
+  var _sortByRating = false;
+  var _hasLocationPermission = false;
+  var _locationLabel = 'Medan, Sumatera Utara';
+  var _mapCenter = _medanCenter;
 
   bool get _showGoogleMap =>
       widget.useGoogleMap &&
@@ -66,21 +76,25 @@ class _MapScreenState extends State<MapScreen> {
 
   List<WasteBank> get _filteredBanks {
     final query = _query.trim().toLowerCase();
-    if (query.isEmpty) return demoWasteBanks;
-
-    return demoWasteBanks
+    final banks = _banks
         .where(
           (bank) =>
+              query.isEmpty ||
               bank.name.toLowerCase().contains(query) ||
               bank.address.toLowerCase().contains(query),
         )
         .toList();
+    if (_sortByRating) {
+      banks.sort((a, b) => b.rating.compareTo(a.rating));
+    }
+    return banks;
   }
 
   @override
   void initState() {
     super.initState();
-    _selectedId = demoWasteBanks.first.id;
+    _banks = widget.repository == null ? demoWasteBanks : <WasteBank>[];
+    _selectedId = _banks.isEmpty ? null : _banks.first.id;
     if (widget.useGoogleMap) {
       _loadMarkerIcons();
       if (kIsWeb &&
@@ -90,6 +104,39 @@ class _MapScreenState extends State<MapScreen> {
           if (mounted) setState(() {});
         });
       }
+    }
+    if (widget.repository != null) _loadBanks();
+  }
+
+  Future<void> _loadBanks({String? query}) async {
+    final repository = widget.repository;
+    if (repository == null) return;
+    setState(() {
+      _loadingBanks = true;
+      _bankError = null;
+    });
+    try {
+      final banks = await repository.getWasteBanks(
+        latitude: _mapCenter.latitude,
+        longitude: _mapCenter.longitude,
+        query: query,
+      );
+      if (!mounted) return;
+      setState(() {
+        _banks = banks;
+        _loadingBanks = false;
+        if (_selectedId == null ||
+            !banks.any((bank) => bank.id == _selectedId)) {
+          _selectedId = banks.isEmpty ? null : banks.first.id;
+        }
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _banks = [];
+        _loadingBanks = false;
+        _bankError = error.toString();
+      });
     }
   }
 
@@ -172,18 +219,57 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  Future<void> _centerToMedan() async {
-    if (!_showGoogleMap) return;
-
+  Future<void> _centerToCurrentLocation() async {
     try {
-      final controller = await _controller.future.timeout(
-        const Duration(seconds: 3),
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw const _LocationException(
+          'Aktifkan Location Services di perangkat lalu coba lagi.',
+        );
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw const _LocationException(
+          'Izinkan akses lokasi agar jarak bank sampah dihitung dari posisimu.',
+        );
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
       );
-      await controller.animateCamera(
-        CameraUpdate.newCameraPosition(_initialCamera),
-      );
-    } catch (_) {
-      // Abaikan kalau map belum siap.
+      final target = LatLng(position.latitude, position.longitude);
+      setState(() {
+        _mapCenter = target;
+        _locationLabel = 'Lokasi saat ini';
+        _hasLocationPermission = true;
+      });
+      await _loadBanks(query: _query);
+
+      if (_showGoogleMap) {
+        final controller = await _controller.future.timeout(
+          const Duration(seconds: 3),
+        );
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: target, zoom: 14.5),
+          ),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is _LocationException
+          ? error.message
+          : 'Lokasi belum bisa didapatkan. Periksa izin lokasi lalu coba lagi.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -198,47 +284,55 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
-        return AppSheet(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Filter Lokasi',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.ink,
+        var selectedByRating = _sortByRating;
+        return StatefulBuilder(
+          builder: (context, setSheetState) => AppSheet(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Filter Lokasi',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.ink,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Google Maps menampilkan lokasi asli bank sampah di sekitar Medan.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 16),
-              const _FilterRow(
-                icon: Icons.near_me_rounded,
-                title: 'Terdekat',
-                subtitle: 'Urutkan berdasarkan jarak',
-                selected: true,
-              ),
-              const SizedBox(height: 10),
-              const _FilterRow(
-                icon: Icons.star_rounded,
-                title: 'Rating tertinggi',
-                subtitle: 'Bank sampah dengan ulasan terbaik',
-                selected: false,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.pop(sheetContext),
-                  child: const Text('Terapkan'),
+                const SizedBox(height: 4),
+                Text(
+                  'Pilih cara mengurutkan bank sampah di sekitarmu.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-              ),
-            ],
+                const SizedBox(height: 16),
+                _FilterRow(
+                  icon: Icons.near_me_rounded,
+                  title: 'Terdekat',
+                  subtitle: 'Urutkan berdasarkan jarak',
+                  selected: !selectedByRating,
+                  onTap: () => setSheetState(() => selectedByRating = false),
+                ),
+                const SizedBox(height: 10),
+                _FilterRow(
+                  icon: Icons.star_rounded,
+                  title: 'Rating tertinggi',
+                  subtitle: 'Bank sampah dengan ulasan terbaik',
+                  selected: selectedByRating,
+                  onTap: () => setSheetState(() => selectedByRating = true),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () {
+                      setState(() => _sortByRating = selectedByRating);
+                      Navigator.pop(sheetContext);
+                    },
+                    child: const Text('Terapkan'),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -319,6 +413,8 @@ class _MapScreenState extends State<MapScreen> {
                 banks: banks,
                 selectedId: _selectedId,
                 onSelect: _selectBank,
+                isLoading: _loadingBanks,
+                error: _bankError,
               ),
             ),
           ),
@@ -336,7 +432,7 @@ class _MapScreenState extends State<MapScreen> {
       onMapCreated: _onMapCreated,
       onTap: (_) => setState(() => _selectedId = null),
       padding: const EdgeInsets.only(top: 180, bottom: 250),
-      myLocationEnabled: false,
+      myLocationEnabled: _hasLocationPermission,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
       mapToolbarEnabled: false,
@@ -461,15 +557,7 @@ class _MapScreenState extends State<MapScreen> {
         const SizedBox(height: 8),
         GestureDetector(
           onTap: () async {
-            await _centerToMedan();
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(
-                const SnackBar(
-                  content: Text('Lokasi saat ini: Medan, Sumatera Utara.'),
-                ),
-              );
+            await _centerToCurrentLocation();
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
@@ -478,7 +566,7 @@ class _MapScreenState extends State<MapScreen> {
               borderRadius: BorderRadius.circular(99),
               border: Border.all(color: AppColors.line),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
@@ -488,7 +576,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 SizedBox(width: 4),
                 Text(
-                  'Medan, Sumatera Utara',
+                  _locationLabel,
                   style: TextStyle(
                     color: AppColors.ink,
                     fontSize: 10.5,
@@ -512,6 +600,12 @@ class _MapScreenState extends State<MapScreen> {
       ],
     );
   }
+}
+
+class _LocationException implements Exception {
+  const _LocationException(this.message);
+
+  final String message;
 }
 
 class _MapsKeyNotice extends StatelessWidget {
@@ -575,11 +669,15 @@ class _BankListCard extends StatelessWidget {
     required this.banks,
     required this.selectedId,
     required this.onSelect,
+    required this.isLoading,
+    required this.error,
   });
 
   final List<WasteBank> banks;
   final String? selectedId;
   final ValueChanged<WasteBank> onSelect;
+  final bool isLoading;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -614,7 +712,17 @@ class _BankListCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          if (banks.isEmpty)
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(error!, style: Theme.of(context).textTheme.bodySmall),
+            )
+          else if (banks.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
@@ -953,46 +1061,52 @@ class _FilterRow extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.selected,
+    required this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(13),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.mint : AppColors.surfaceMuted,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: selected ? AppColors.forest : Colors.transparent,
+    return InkWell(
+      borderRadius: BorderRadius.circular(18),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.mint : AppColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? AppColors.forest : Colors.transparent,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: AppColors.forest, size: 21),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: Theme.of(context).textTheme.titleSmall),
-                const SizedBox(height: 2),
-                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-              ],
+        child: Row(
+          children: [
+            Icon(icon, color: AppColors.forest, size: 21),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
             ),
-          ),
-          Icon(
-            selected
-                ? Icons.radio_button_checked_rounded
-                : Icons.radio_button_off_rounded,
-            color: selected ? AppColors.forest : AppColors.muted,
-            size: 19,
-          ),
-        ],
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: selected ? AppColors.forest : AppColors.muted,
+              size: 19,
+            ),
+          ],
+        ),
       ),
     );
   }

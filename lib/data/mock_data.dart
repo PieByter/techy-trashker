@@ -49,6 +49,7 @@ const demoNews = <NewsItem>[
 final demoDeposits = <WasteDeposit>[
   WasteDeposit(
     id: 'TT-00147',
+    code: 'TT-00147',
     material: 'Botol Plastik',
     category: 'Plastik',
     weightKg: 2.4,
@@ -59,6 +60,7 @@ final demoDeposits = <WasteDeposit>[
   ),
   WasteDeposit(
     id: 'TT-00146',
+    code: 'TT-00146',
     material: 'Kertas & Kardus',
     category: 'Kertas',
     weightKg: 3.1,
@@ -69,6 +71,7 @@ final demoDeposits = <WasteDeposit>[
   ),
   WasteDeposit(
     id: 'TT-00145',
+    code: 'TT-00145',
     material: 'Kaleng Aluminium',
     category: 'Logam',
     weightKg: 1.2,
@@ -79,6 +82,7 @@ final demoDeposits = <WasteDeposit>[
   ),
   WasteDeposit(
     id: 'TT-00144',
+    code: 'TT-00144',
     material: 'Sampah Organik',
     category: 'Organik',
     weightKg: 4.8,
@@ -89,6 +93,7 @@ final demoDeposits = <WasteDeposit>[
   ),
   WasteDeposit(
     id: 'TT-00143',
+    code: 'TT-00143',
     material: 'Elektronik Kecil',
     category: 'E-Waste',
     weightKg: 0.9,
