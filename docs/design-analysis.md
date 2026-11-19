@@ -55,7 +55,7 @@ cards, soft mint highlights, and amber accents for points/rewards.
 | Amber | `#E7A544` | Points/reward accent |
 | Line | `#E3E9E2` | Borders and dividers |
 
-- **Typography:** Plus Jakarta Sans (Regular 400 → ExtraBold 800), bundled locally
+- **Typography:** Poppins (Regular 400 → ExtraBold 800), bundled locally
   in `assets/fonts/`. The Figma file's exact text styles were not readable from
   the view-only embed, so weights/sizes are an approximation.
 - **Shape:** 18–30 px rounded corners, pill-shaped chips and buttons.
@@ -72,8 +72,8 @@ cards, soft mint highlights, and amber accents for points/rewards.
    actions, recent deposits, nearest bank card, notification and reward sheets.
 4. **Riwayat** — summary stats, filter by Setor/Jemput, newest/oldest sorting,
    deposit detail sheet.
-5. **Peta** — stylised radar map, searchable waste-bank list, selectable markers,
-   user pulse marker, and filter sheet.
+5. **Peta** — Google Maps dengan marker bank sampah, pencarian, filter, dan
+   fallback preview jika API key belum tersedia.
 6. **Profil** — profile hero, stats, level progress, account/settings menus,
    help dialog, about dialog, logout confirmation.
 7. **QR Setor** — generated QR-style pattern, member card, instructions, and

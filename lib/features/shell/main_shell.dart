@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_bottom_nav.dart';
@@ -35,9 +36,11 @@ class MainShell extends StatelessWidget {
         backgroundColor: AppColors.cream,
         extendBody: true,
         body: navigationShell,
-        bottomNavigationBar: AppBottomNav(
-          selectedIndex: selectedIndex,
-          onSelect: (index) => _onSelect(context, index),
+        bottomNavigationBar: PointerInterceptor(
+          child: AppBottomNav(
+            selectedIndex: selectedIndex,
+            onSelect: (index) => _onSelect(context, index),
+          ),
         ),
       ),
     );

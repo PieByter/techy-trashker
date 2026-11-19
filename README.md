@@ -5,8 +5,9 @@ Figma **Techy Trashker (FORDIGI)**.
 
 > Status: **MVP** — UI prototype Flutter + backend API di [`backend/`](backend/).
 > Backend sudah mencakup auth, profil/poin, setoran, penjemputan, QR, reward,
-> leaderboard, dan admin. Aplikasi Flutter masih memakai data dummy; integrasi
-> API adalah langkah berikutnya.
+> leaderboard, dan admin. Peta sudah memakai **Google Maps** (API key lewat
+> `.env`). Aplikasi Flutter masih memakai data dummy; integrasi API adalah
+> langkah berikutnya.
 
 ## Screenshots
 
@@ -18,13 +19,17 @@ Figma **Techy Trashker (FORDIGI)**.
 | --- | --- | --- | --- |
 | ![Onboarding](docs/screenshots/onboarding.png) | ![Login](docs/screenshots/login.png) | ![Profil](docs/screenshots/profile.png) | ![QR](docs/screenshots/qr.png) |
 
+> Screenshot Peta di atas memakai fallback preview (golden test). Di runtime
+> dengan `GOOGLE_MAPS_API_KEY` terisi, yang tampil adalah Google Maps asli.
+
 ## Fitur prototype
 
 - **Onboarding** 3 halaman dengan badges, dots indicator, dan skip.
 - **Login / Daftar** dengan validasi form dan akun demo.
 - **Home** — sapaan, poin, Hot News, aksi cepat, aktivitas terakhir, bank terdekat.
 - **Riwayat** — ringkasan poin/berat, filter Setor/Jemput, sorting, detail transaksi.
-- **Peta** — peta radar stylized, pencarian bank sampah, marker interaktif, filter.
+- **Peta** — Google Maps asli dengan marker bank sampah, pencarian, dan info
+  buka/tutup. Ada fallback preview kalau API key belum diisi.
 - **Profil** — statistik, level progress, menu akun, pengaturan, bantuan, logout.
 - **QR Setor** — kartu member, QR-style pattern, instruksi, simpan/bagikan.
 - **Bottom sheet interaktif** untuk notifikasi, jadwal penjemputan, reward, berita,
@@ -35,7 +40,8 @@ Figma **Techy Trashker (FORDIGI)**.
 - Flutter 3.44+ / Dart 3.12+
 - `go_router` untuk routing dan stateful bottom navigation
 - Material 3 + custom theme
-- Plus Jakarta Sans (bundled di `assets/fonts/`)
+- Poppins (bundled di `assets/fonts/`)
+- `google_maps_flutter` untuk peta dan marker bank sampah
 - Data dummy lokal di `lib/data/mock_data.dart`
 - Backend: Fastify 5 + TypeScript, Supabase Auth, Supabase Postgres, Drizzle ORM
 
@@ -74,23 +80,71 @@ Akun demo backend:
 
 ## Menjalankan
 
+### 1. Isi API key Google Maps
+
+```bash
+cp .env.example .env
+```
+
+Isi `GOOGLE_MAPS_API_KEY` di `.env` dengan key dari Google Cloud Console.
+Aktifkan **Maps SDK for Android**, **Maps SDK for iOS**, dan/atau **Maps
+JavaScript API** sesuai platform yang dipakai.
+
+### 2. Jalankan aplikasi
+
 ```bash
 flutter pub get
-flutter run
+flutter run --dart-define-from-file=.env
 ```
 
 Untuk web:
 
 ```bash
-flutter run -d chrome
+flutter run -d chrome --dart-define-from-file=.env
 ```
+
+Android membaca `.env` otomatis lewat `android/app/build.gradle.kts`; flag
+`--dart-define-from-file` diperlukan untuk web dan disarankan untuk semua
+platform. Kalau memakai VS Code, pilih launch config **Techy Trashker (Chrome)**
+atau **Techy Trashker (pilih device)**.
+
+Detail setup Google Maps (termasuk iOS) ada di [Google Maps](#google-maps).
 
 Build production:
 
 ```bash
-flutter build web
+flutter build web --dart-define-from-file=.env
 flutter build apk --release
 ```
+
+## Google Maps
+
+Aplikasi memakai `google_maps_flutter` dengan marker custom
+(`assets/images/map-pin-*.png`) dan style peta hijau yang selaras dengan brand.
+
+- **Android**: key dibaca dari `.env` oleh Gradle, lalu dimasukkan ke
+  `AndroidManifest.xml` sebagai `com.google.android.geo.API_KEY`.
+- **Web**: key dibaca dari `--dart-define-from-file=.env`, lalu script Maps
+  JavaScript API dimuat sebelum aplikasi berjalan. Tanpa key, halaman Peta
+  menampilkan preview + petunjuk.
+- **iOS**: salin `ios/Flutter/Secrets.xcconfig.example` menjadi
+  `ios/Flutter/Secrets.xcconfig`, isi key, lalu build dari macOS. File tersebut
+  sudah di-gitignore.
+
+> Catatan: `.env` di root project khusus Google Maps. Konfigurasi backend
+> Supabase ada di `backend/.env` (lihat [`backend/README.md`](backend/README.md)).
+
+Batasi API key di Google Cloud:
+
+- Android key → batasi ke package `com.techytrashker.techy_trashker` + SHA-1
+  signing certificate.
+- Web key → batasi ke HTTP referrer domain kamu (tambahkan juga
+  `http://localhost:*/*` untuk development).
+- Jangan commit `.env` atau `Secrets.xcconfig`.
+
+Kalau Android masih memakai key lama setelah `.env` diubah, jalankan
+`flutter clean` lalu build ulang. Untuk web, hentikan dan jalankan ulang
+`flutter run` karena nilai `--dart-define` dibaca saat compile.
 
 ## Struktur project
 
@@ -99,6 +153,7 @@ lib/
 ├── main.dart
 ├── app.dart
 ├── core/
+│   ├── config/           # konfigurasi Google Maps + loader web
 │   ├── router.dart
 │   ├── theme/            # warna, typography, theme
 │   ├── utils/            # formatter, material icon mapping
@@ -166,9 +221,9 @@ npm run typecheck
 
 - [x] Backend API MVP (Fastify + Supabase Auth/Postgres + Drizzle).
 - [x] Autentikasi, profil, poin, setoran, QR, reward, leaderboard, admin.
+- [x] Google Maps dengan marker bank sampah + API key lewat `.env`.
 - [ ] Sambungkan aplikasi Flutter ke API (ganti `mock_data.dart`).
 - [ ] Simpan token aman + auto-refresh di Flutter.
-- [ ] Integrasi peta nyata (Google Maps / Mapbox) dan geolokasi.
 - [ ] Form penjemputan dengan tanggal, alamat, dan upload foto.
 - [ ] QR asli di Flutter (render `qrPayload` + countdown token).
 - [ ] Halaman reward redemption dan riwayat penukaran di Flutter.

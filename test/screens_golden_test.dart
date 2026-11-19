@@ -122,7 +122,7 @@ void main() {
   testWidgets('map screenshot', (tester) async {
     await capture(
       tester,
-      const TickerMode(enabled: false, child: MapScreen()),
+      const TickerMode(enabled: false, child: MapScreen(useGoogleMap: false)),
       'map',
       selectedNav: 3,
     );

@@ -1,8 +1,41 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Baca GOOGLE_MAPS_API_KEY dari .env di root project (satu tempat untuk
+// Android/web), lalu fallback ke android/local.properties atau environment.
+val envProperties = Properties()
+val envFile = rootProject.projectDir.parentFile.resolve(".env")
+if (envFile.exists()) {
+    envFile.readLines().forEach { rawLine ->
+        val line = rawLine.trim()
+        if (line.isNotEmpty() && !line.startsWith("#") && line.contains("=")) {
+            val separator = line.indexOf('=')
+            val key = line.substring(0, separator).trim()
+            val value = line.substring(separator + 1).trim()
+                .removePrefix("\"").removeSuffix("\"")
+                .removePrefix("'").removeSuffix("'")
+            envProperties.setProperty(key, value)
+        }
+    }
+}
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
+val googleMapsApiKey = (
+    envProperties.getProperty("GOOGLE_MAPS_API_KEY")
+        ?: localProperties.getProperty("GOOGLE_MAPS_API_KEY")
+        ?: System.getenv("GOOGLE_MAPS_API_KEY")
+        ?: ""
+).trim()
 
 android {
     namespace = "com.techytrashker.techy_trashker"
@@ -23,6 +56,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey
     }
 
     buildTypes {

@@ -1,7 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:pointer_interceptor/pointer_interceptor.dart';
 
+import '../../core/config/google_maps_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/widgets/app_sheet.dart';
 import '../../core/widgets/profile_avatar.dart';
@@ -9,19 +14,60 @@ import '../../data/mock_data.dart';
 import '../../data/models/waste_bank.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  const MapScreen({super.key, this.useGoogleMap = true});
+
+  /// `false` dipakai widget test/golden supaya tidak membuat platform view.
+  /// Map preview tetap menampilkan marker dengan posisi `mapX`/`mapY`.
+  final bool useGoogleMap;
 
   @override
   State<MapScreen> createState() => _MapScreenState();
 }
 
 class _MapScreenState extends State<MapScreen> {
+  static const _medanCenter = LatLng(3.5952, 98.6722);
+  static const _initialCamera = CameraPosition(
+    target: _medanCenter,
+    zoom: 13.2,
+  );
+
+  static const _mapStyle = '''
+[
+  {"elementType": "geometry", "stylers": [{"color": "#F4F2E9"}]},
+  {"elementType": "labels.text.fill", "stylers": [{"color": "#5D6D62"}]},
+  {"elementType": "labels.text.stroke", "stylers": [{"color": "#F7F6F1"}]},
+  {"featureType": "administrative", "elementType": "geometry.stroke", "stylers": [{"color": "#DCE4D8"}]},
+  {"featureType": "landscape.natural", "elementType": "geometry", "stylers": [{"color": "#E4EFE6"}]},
+  {"featureType": "poi", "elementType": "geometry", "stylers": [{"color": "#DDE9D9"}]},
+  {"featureType": "poi.park", "elementType": "geometry.fill", "stylers": [{"color": "#D5E6D4"}]},
+  {"featureType": "road", "elementType": "geometry", "stylers": [{"color": "#FFFFFF"}]},
+  {"featureType": "road", "elementType": "geometry.stroke", "stylers": [{"color": "#E3E9E2"}]},
+  {"featureType": "road.highway", "elementType": "geometry", "stylers": [{"color": "#F1EEE3"}]},
+  {"featureType": "transit", "elementType": "geometry", "stylers": [{"color": "#EAE7DC"}]},
+  {"featureType": "water", "elementType": "geometry", "stylers": [{"color": "#D7E7EF"}]}
+]
+''';
+
+  final Completer<GoogleMapController> _controller =
+      Completer<GoogleMapController>();
+
+  BitmapDescriptor? _openMarker;
+  BitmapDescriptor? _selectedMarker;
+  BitmapDescriptor? _closedMarker;
+
   var _query = '';
-  var _selectedName = demoWasteBanks.first.name;
+  String? _selectedId;
+
+  bool get _showGoogleMap =>
+      widget.useGoogleMap &&
+      GoogleMapsConfig.isReady &&
+      !GoogleMapsConfig.isWebKeyMissing &&
+      !GoogleMapsConfig.hasWebLoadError;
 
   List<WasteBank> get _filteredBanks {
     final query = _query.trim().toLowerCase();
     if (query.isEmpty) return demoWasteBanks;
+
     return demoWasteBanks
         .where(
           (bank) =>
@@ -29,6 +75,122 @@ class _MapScreenState extends State<MapScreen> {
               bank.address.toLowerCase().contains(query),
         )
         .toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedId = demoWasteBanks.first.id;
+    if (widget.useGoogleMap) {
+      _loadMarkerIcons();
+      if (kIsWeb &&
+          !GoogleMapsConfig.isWebKeyMissing &&
+          !GoogleMapsConfig.isReady) {
+        GoogleMapsConfig.prepare().whenComplete(() {
+          if (mounted) setState(() {});
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMarkerIcons() async {
+    try {
+      const configuration = ImageConfiguration();
+      final open = await BitmapDescriptor.asset(
+        configuration,
+        'assets/images/map-pin-open.png',
+        width: 38,
+        height: 50,
+      );
+      final selected = await BitmapDescriptor.asset(
+        configuration,
+        'assets/images/map-pin-selected.png',
+        width: 42,
+        height: 55,
+      );
+      final closed = await BitmapDescriptor.asset(
+        configuration,
+        'assets/images/map-pin-closed.png',
+        width: 38,
+        height: 50,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _openMarker = open;
+        _selectedMarker = selected;
+        _closedMarker = closed;
+      });
+    } catch (_) {
+      // Marker default Google Maps tetap dipakai kalau asset gagal dimuat.
+    }
+  }
+
+  Set<Marker> _buildMarkers(List<WasteBank> banks) {
+    return banks.map((bank) {
+      final isSelected = bank.id == _selectedId;
+      final icon = isSelected
+          ? (_selectedMarker ?? BitmapDescriptor.defaultMarker)
+          : bank.isOpen
+          ? (_openMarker ?? BitmapDescriptor.defaultMarker)
+          : (_closedMarker ?? BitmapDescriptor.defaultMarker);
+
+      return Marker(
+        markerId: MarkerId(bank.id),
+        position: LatLng(bank.latitude, bank.longitude),
+        icon: icon,
+        anchor: const Offset(0.5, 1),
+        zIndexInt: isSelected ? 2 : 1,
+        infoWindow: InfoWindow(
+          title: bank.name,
+          snippet: '${bank.address} · ${bank.distanceKm.toStringAsFixed(1)} km',
+        ),
+        onTap: () => _selectBank(bank),
+      );
+    }).toSet();
+  }
+
+  Future<void> _selectBank(WasteBank bank) async {
+    setState(() => _selectedId = bank.id);
+
+    if (!_showGoogleMap) return;
+
+    try {
+      final controller = await _controller.future.timeout(
+        const Duration(seconds: 3),
+      );
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: LatLng(bank.latitude, bank.longitude),
+            zoom: 15.4,
+          ),
+        ),
+      );
+    } catch (_) {
+      // Map belum siap; pilihan card tetap tersimpan.
+    }
+  }
+
+  Future<void> _centerToMedan() async {
+    if (!_showGoogleMap) return;
+
+    try {
+      final controller = await _controller.future.timeout(
+        const Duration(seconds: 3),
+      );
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(_initialCamera),
+      );
+    } catch (_) {
+      // Abaikan kalau map belum siap.
+    }
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    if (!_controller.isCompleted) {
+      _controller.complete(controller);
+    }
   }
 
   void _showFilterInfo() {
@@ -51,11 +213,11 @@ class _MapScreenState extends State<MapScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Versi prototype menampilkan semua bank sampah di sekitar Medan.',
+                'Google Maps menampilkan lokasi asli bank sampah di sekitar Medan.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
-              _FilterRow(
+              const _FilterRow(
                 icon: Icons.near_me_rounded,
                 title: 'Terdekat',
                 subtitle: 'Urutkan berdasarkan jarak',
@@ -87,70 +249,150 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final banks = _filteredBanks;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final showKeyNotice =
+        kIsWeb &&
+        (GoogleMapsConfig.isWebKeyMissing || GoogleMapsConfig.hasWebLoadError);
 
     return SafeArea(
       bottom: false,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final height = constraints.maxHeight;
-          final zoneTop = height * 0.28;
-          final zoneHeight = height * 0.18;
-
-          return Stack(
-            children: [
-              Positioned.fill(child: CustomPaint(painter: _RadarMapPainter())),
-              Positioned(
-                left: 0,
-                right: 0,
-                top: zoneTop,
-                height: zoneHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (final bank in demoWasteBanks)
-                      Positioned(
-                        left: (bank.mapX * width - 60).clamp(4.0, width - 124),
-                        top: bank.mapY * zoneHeight - 20,
-                        child: _BankMarker(
-                          bank: bank,
-                          selected: _selectedName == bank.name,
-                          onTap: () =>
-                              setState(() => _selectedName = bank.name),
-                        ),
-                      ),
-                    Positioned(
-                      left: width / 2 - 50,
-                      top: height * 0.14 - 20,
-                      child: const _PulseLocation(),
-                    ),
-                  ],
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: _showGoogleMap
+                ? _buildGoogleMap(banks)
+                : _buildMapPreview(banks),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: showKeyNotice ? 330 : 230,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.cream.withValues(alpha: .98),
+                      AppColors.cream.withValues(alpha: 0),
+                    ],
+                  ),
                 ),
               ),
-              Positioned(
-                top: 8,
-                left: 20,
-                right: 20,
-                child: _buildTopPanel(context),
-              ),
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 104 + bottomInset,
-                child: _BankListCard(
-                  banks: banks,
-                  selectedName: _selectedName,
-                  onSelect: (bank) => setState(() => _selectedName = bank.name),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 300,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      AppColors.cream.withValues(alpha: .96),
+                      AppColors.cream.withValues(alpha: 0),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+          Positioned(
+            top: 8,
+            left: 20,
+            right: 20,
+            child: PointerInterceptor(
+              child: _buildTopPanel(context, showKeyNotice: showKeyNotice),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 104 + bottomInset,
+            child: PointerInterceptor(
+              child: _BankListCard(
+                banks: banks,
+                selectedId: _selectedId,
+                onSelect: _selectBank,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildTopPanel(BuildContext context) {
+  Widget _buildGoogleMap(List<WasteBank> banks) {
+    return GoogleMap(
+      initialCameraPosition: _initialCamera,
+      mapType: MapType.normal,
+      style: _mapStyle,
+      markers: _buildMarkers(banks),
+      onMapCreated: _onMapCreated,
+      onTap: (_) => setState(() => _selectedId = null),
+      padding: const EdgeInsets.only(top: 180, bottom: 250),
+      myLocationEnabled: false,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      indoorViewEnabled: false,
+      trafficEnabled: false,
+      minMaxZoomPreference: const MinMaxZoomPreference(10, 19),
+    );
+  }
+
+  Widget _buildMapPreview(List<WasteBank> banks) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = constraints.maxHeight;
+        final zoneTop = height * .28;
+        final zoneHeight = height * .18;
+
+        return Stack(
+          children: [
+            Positioned.fill(child: CustomPaint(painter: _RadarMapPainter())),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: zoneTop,
+              height: zoneHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  for (final bank in banks)
+                    Positioned(
+                      left: (bank.mapX * width - 60).clamp(4.0, width - 124),
+                      top: bank.mapY * zoneHeight - 20,
+                      child: _BankMarker(
+                        bank: bank,
+                        selected: _selectedId == bank.id,
+                        onTap: () => _selectBank(bank),
+                      ),
+                    ),
+                  Positioned(
+                    left: width / 2 - 50,
+                    top: height * .14 - 20,
+                    child: const _PulseLocation(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTopPanel(BuildContext context, {required bool showKeyNotice}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -190,7 +432,16 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
           child: TextField(
-            onChanged: (value) => setState(() => _query = value),
+            onChanged: (value) {
+              setState(() {
+                _query = value;
+                final filtered = _filteredBanks;
+                if (filtered.isNotEmpty &&
+                    !filtered.any((bank) => bank.id == _selectedId)) {
+                  _selectedId = filtered.first.id;
+                }
+              });
+            },
             style: const TextStyle(fontSize: 13.5),
             decoration: const InputDecoration(
               hintText: 'Cari bank sampah atau jalan...',
@@ -209,7 +460,9 @@ class _MapScreenState extends State<MapScreen> {
         ),
         const SizedBox(height: 8),
         GestureDetector(
-          onTap: () {
+          onTap: () async {
+            await _centerToMedan();
+            if (!context.mounted) return;
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
               ..showSnackBar(
@@ -244,15 +497,75 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 SizedBox(width: 4),
                 Icon(
-                  Icons.keyboard_arrow_down_rounded,
+                  Icons.my_location_rounded,
                   color: AppColors.muted,
-                  size: 14,
+                  size: 13,
                 ),
               ],
             ),
           ),
         ),
+        if (showKeyNotice) ...[
+          const SizedBox(height: 10),
+          _MapsKeyNotice(error: GoogleMapsConfig.loadError),
+        ],
       ],
+    );
+  }
+}
+
+class _MapsKeyNotice extends StatelessWidget {
+  const _MapsKeyNotice({this.error});
+
+  final Object? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = error != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.amberSoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.amber.withValues(alpha: .45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.map_outlined, color: Color(0xFF9A6B1F), size: 20),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasError
+                      ? 'Google Maps gagal dimuat'
+                      : 'Google Maps belum aktif',
+                  style: const TextStyle(
+                    color: Color(0xFF6B4A16),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasError
+                      ? 'Periksa API key dan restriction Google Cloud, lalu muat ulang halaman.'
+                      : 'Isi GOOGLE_MAPS_API_KEY di .env, lalu jalankan flutter run -d chrome --dart-define-from-file=.env.',
+                  style: const TextStyle(
+                    color: Color(0xFF9A6B1F),
+                    fontSize: 10,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -260,12 +573,12 @@ class _MapScreenState extends State<MapScreen> {
 class _BankListCard extends StatelessWidget {
   const _BankListCard({
     required this.banks,
-    required this.selectedName,
+    required this.selectedId,
     required this.onSelect,
   });
 
   final List<WasteBank> banks;
-  final String selectedName;
+  final String? selectedId;
   final ValueChanged<WasteBank> onSelect;
 
   @override
@@ -322,7 +635,7 @@ class _BankListCard extends StatelessWidget {
                   final bank = banks[index];
                   return _BankCard(
                     bank: bank,
-                    selected: bank.name == selectedName,
+                    selected: bank.id == selectedId,
                     onTap: () => onSelect(bank),
                   );
                 },

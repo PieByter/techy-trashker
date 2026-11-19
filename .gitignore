@@ -12,6 +12,12 @@
 .swiftpm/
 migrate_working_dir/
 
+# Local secrets
+.env
+.env.local
+.env.*.local
+ios/Flutter/Secrets.xcconfig
+
 # IntelliJ related
 *.iml
 *.ipr

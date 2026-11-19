@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app.dart';
+import 'core/config/google_maps_config.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,10 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
+
+  // Mulai load script Maps di background (web). MapScreen memakai future yang
+  // sama dan menampilkan preview sampai script siap.
+  GoogleMapsConfig.prepare();
 
   runApp(const TechyTrashkerApp());
 }
