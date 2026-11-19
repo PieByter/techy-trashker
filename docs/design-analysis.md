@@ -79,12 +79,14 @@ cards, soft mint highlights, and amber accents for points/rewards.
 7. **QR Setor** — generated QR-style pattern, member card, instructions, and
    save/share actions.
 
-All data is currently dummy data in `lib/data/mock_data.dart`. There is no
-backend, authentication, or persistence yet.
+All UI data is still dummy data in `lib/data/mock_data.dart`. The backend MVP
+in `backend/` is implemented; wiring the Flutter app to it is the next step.
 
 ## Suggested next step: backend contract
 
-When the UI is approved, the mock data can be replaced with these endpoints:
+The contract below is now implemented in [`backend/`](../backend/) using
+Supabase Auth, Supabase Postgres, Drizzle ORM, and Fastify. The Flutter UI still
+uses mock data until it is wired to the API.
 
 | Endpoint | Purpose |
 | --- | --- |
