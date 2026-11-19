@@ -15,9 +15,9 @@ import 'package:techy_trashker/features/profile/profile_screen.dart';
 import 'package:techy_trashker/features/qr/qr_screen.dart';
 
 Future<void> _loadFonts() async {
-  final loader = FontLoader('PlusJakartaSans');
+  final loader = FontLoader('Poppins');
   for (final weight in ['Regular', 'Medium', 'SemiBold', 'Bold', 'ExtraBold']) {
-    loader.addFont(rootBundle.load('assets/fonts/PlusJakartaSans-$weight.ttf'));
+    loader.addFont(rootBundle.load('assets/fonts/Poppins-$weight.ttf'));
   }
   await loader.load();
 
@@ -32,6 +32,7 @@ Future<void> _precacheImages(WidgetTester tester) async {
       'assets/images/news-1.jpg',
       'assets/images/news-2.jpg',
       'assets/images/news-3.jpg',
+      'assets/images/avatar.jpg',
     ]) {
       final stream = AssetImage(asset).resolve(ImageConfiguration.empty);
       final completer = Completer<void>();

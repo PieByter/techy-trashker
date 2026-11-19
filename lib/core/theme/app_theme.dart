@@ -107,7 +107,7 @@ abstract final class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.cream,
-      fontFamily: 'PlusJakartaSans',
+      fontFamily: 'Poppins',
       textTheme: textTheme,
       splashFactory: InkSparkle.splashFactory,
       appBarTheme: const AppBarTheme(
@@ -117,7 +117,7 @@ abstract final class AppTheme {
         centerTitle: false,
         foregroundColor: AppColors.ink,
         titleTextStyle: TextStyle(
-          fontFamily: 'PlusJakartaSans',
+          fontFamily: 'Poppins',
           fontSize: 18,
           fontWeight: FontWeight.w700,
           color: AppColors.ink,
@@ -174,7 +174,7 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(18),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'PlusJakartaSans',
+            fontFamily: 'Poppins',
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
@@ -189,7 +189,7 @@ abstract final class AppTheme {
             borderRadius: BorderRadius.circular(18),
           ),
           textStyle: const TextStyle(
-            fontFamily: 'PlusJakartaSans',
+            fontFamily: 'Poppins',
             fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
@@ -199,7 +199,7 @@ abstract final class AppTheme {
         style: TextButton.styleFrom(
           foregroundColor: AppColors.forest,
           textStyle: const TextStyle(
-            fontFamily: 'PlusJakartaSans',
+            fontFamily: 'Poppins',
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
           ),
@@ -208,7 +208,7 @@ abstract final class AppTheme {
       snackBarTheme: SnackBarThemeData(
         backgroundColor: AppColors.forestDark,
         contentTextStyle: const TextStyle(
-          fontFamily: 'PlusJakartaSans',
+          fontFamily: 'Poppins',
           color: Colors.white,
           fontSize: 13.5,
           fontWeight: FontWeight.w500,

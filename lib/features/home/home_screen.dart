@@ -545,7 +545,12 @@ class _HomeHeader extends StatelessWidget {
           onTap: onNotifications,
         ),
         const SizedBox(width: 10),
-        ProfileAvatar(initials: profile.initials, size: 48, showRing: true),
+        ProfileAvatar(
+          initials: profile.initials,
+          size: 48,
+          showRing: true,
+          imageAsset: 'assets/images/avatar.jpg',
+        ),
       ],
     );
   }

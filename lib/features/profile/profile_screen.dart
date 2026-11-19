@@ -280,6 +280,7 @@ class _ProfileHero extends StatelessWidget {
                     initials: demoProfile.initials,
                     size: 66,
                     showRing: true,
+                    imageAsset: 'assets/images/avatar.jpg',
                   ),
                   const SizedBox(width: 14),
                   Expanded(

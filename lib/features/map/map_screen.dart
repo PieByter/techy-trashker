@@ -585,7 +585,11 @@ class _PulseLocationState extends State<_PulseLocation>
                   ],
                 ),
                 alignment: Alignment.center,
-                child: const ProfileAvatar(initials: 'AP', size: 38),
+                child: const ProfileAvatar(
+                  initials: 'AP',
+                  size: 38,
+                  imageAsset: 'assets/images/avatar.jpg',
+                ),
               ),
             ],
           );
